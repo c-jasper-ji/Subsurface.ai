@@ -22,8 +22,6 @@ import {
 import './App.css'
 
 const LASTFM_KEY = import.meta.env.VITE_LASTFM_KEY
-const SPOTIFY_CLIENT_ID = import.meta.env.VITE_SPOTIFY_CLIENT_ID
-const SPOTIFY_CLIENT_SECRET = import.meta.env.VITE_SPOTIFY_CLIENT_SECRET
 const LASTFM_BASE = 'https://ws.audioscrobbler.com/2.0/'
 const HISTORY_KEY = 'subsurface-next-history'
 
@@ -141,55 +139,15 @@ async function lastfm(method, params) {
   return data
 }
 
-let cachedSpotifyToken = null
-
-async function getSpotifyToken() {
-  if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) return null
-  if (cachedSpotifyToken?.expiresAt > Date.now() + 30_000) return cachedSpotifyToken.value
-
-  const credentials = btoa(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`)
-  const response = await fetch('https://accounts.spotify.com/api/token', {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: 'grant_type=client_credentials',
-  })
-
-  if (!response.ok) return null
-  const data = await response.json()
-  cachedSpotifyToken = {
-    value: data.access_token,
-    expiresAt: Date.now() + data.expires_in * 1000,
-  }
-  return cachedSpotifyToken.value
-}
-
 async function getSpotifyArtist(name) {
-  const token = await getSpotifyToken()
-  if (!token) return null
+  const url = new URL('/api/spotify-artist', window.location.origin)
+  url.searchParams.set('name', name)
 
-  const url = new URL('https://api.spotify.com/v1/search')
-  url.searchParams.set('q', name)
-  url.searchParams.set('type', 'artist')
-  url.searchParams.set('limit', '1')
-
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
+  const response = await fetch(url)
 
   if (!response.ok) return null
   const data = await response.json()
-  const artist = data.artists?.items?.[0]
-  if (!artist) return null
-
-  return {
-    spotifyUrl: artist.external_urls?.spotify,
-    image: artist.images?.[0]?.url || '',
-    spotifyGenres: artist.genres || [],
-    popularity: artist.popularity,
-  }
+  return data.artist || null
 }
 
 async function enrichArtist(candidate) {
@@ -425,7 +383,7 @@ function App() {
         <div className="sidebar-card">
           <span className="eyebrow">API Status</span>
           <strong>{LASTFM_KEY ? 'Last.fm ready' : 'Demo mode'}</strong>
-          <p>{SPOTIFY_CLIENT_ID ? 'Spotify enrichment enabled.' : 'Add Spotify keys for artist photos and profile links.'}</p>
+          <p>Spotify enrichment is routed through a serverless API so secrets stay off the frontend.</p>
         </div>
       </aside>
 

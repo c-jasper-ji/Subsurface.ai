@@ -19,7 +19,7 @@ Subsurface Next is a redesigned version of the original Music Finder demo. The c
 | React + Vite | Frontend application |
 | Lucide React | Icon system |
 | Last.fm API | Similar artists, listener counts, tags, biography and top tracks |
-| Spotify API | Artist photos and profile links |
+| Spotify API | Artist photos and profile links through a serverless proxy |
 | localStorage | Demo search history |
 
 ## Environment Variables
@@ -28,11 +28,11 @@ Create a `.env` file in the project root:
 
 ```env
 VITE_LASTFM_KEY=your_lastfm_api_key
-VITE_SPOTIFY_CLIENT_ID=your_spotify_client_id
-VITE_SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
+SPOTIFY_CLIENT_ID=your_spotify_client_id
+SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
 ```
 
-Last.fm is required for live recommendations. Spotify is optional but improves artist photos and profile routing.
+Last.fm is required for live recommendations. Spotify keys must be stored as server-side environment variables on Vercel or Netlify. Do not expose `SPOTIFY_CLIENT_SECRET` in browser-side `VITE_` variables.
 
 ## Running Locally
 
@@ -42,6 +42,26 @@ npm run dev -- --host 127.0.0.1
 ```
 
 Open the local URL shown by Vite, usually `http://127.0.0.1:5173/`.
+
+For the complete deployed version, use Vercel or Netlify so `/api/spotify-artist` can run as a serverless function. GitHub Pages can host the UI, but it cannot securely run the Spotify secret exchange.
+
+## Deployment
+
+### Vercel
+
+Add these environment variables in the Vercel project settings:
+
+```text
+VITE_LASTFM_KEY
+SPOTIFY_CLIENT_ID
+SPOTIFY_CLIENT_SECRET
+```
+
+Then deploy the repository. Vercel will build `dist` and expose the Spotify proxy at `/api/spotify-artist`.
+
+### Netlify
+
+Add the same environment variables in Netlify. The included `netlify.toml` maps `/api/spotify-artist` to the Netlify function at `/.netlify/functions/spotify-artist`.
 
 ## Validation
 
