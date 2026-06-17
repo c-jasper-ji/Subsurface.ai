@@ -333,6 +333,8 @@ export default async function handler(req, res) {
     )
 
     const results = enriched
+      .filter((artist) => artist.monthlyListeners >= 1_000)
+      .filter((artist) => !genreQueries.some((genre) => normalizeText(genre) === normalizeText(artist.name)))
       .sort((a, b) => b.score - a.score)
       .slice(0, 12)
 
