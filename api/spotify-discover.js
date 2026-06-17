@@ -68,6 +68,14 @@ async function getArtistByName(name, token) {
   return data.artists?.items?.[0] || null
 }
 
+async function getArtistById(id, token) {
+  try {
+    return await spotify(`/artists/${id}`, token)
+  } catch {
+    return null
+  }
+}
+
 async function searchArtists(query, token, limit = 8) {
   const data = await spotify('/search', token, {
     q: query,
@@ -230,14 +238,7 @@ export default async function handler(req, res) {
       return
     }
 
-    const batches = []
-    for (let index = 0; index < candidateIds.length; index += 50) {
-      batches.push(candidateIds.slice(index, index + 50))
-    }
-
-    const artistDetails = (
-      await Promise.all(batches.map((ids) => spotify('/artists', token, { ids: ids.join(',') })))
-    ).flatMap((batch) => batch.artists || [])
+    const artistDetails = (await Promise.all(candidateIds.map((id) => getArtistById(id, token)))).filter(Boolean)
 
     const maxFollowers = Math.max(...artistDetails.map((artist) => artist.followers?.total || 0), 1)
     const context = { seedGenres, avgPopularity, maxFollowers, seedCount: seedArtists.length }
