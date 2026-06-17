@@ -106,7 +106,7 @@ const PLAYLIST_MOODS = {
 }
 
 function formatNumber(value) {
-  if (!value) return 'signal pending'
+  if (!value) return 'not available'
   return Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
 }
 
@@ -160,9 +160,9 @@ function makeSessionId() {
 
 function App() {
   const [activePage, setActivePage] = useState('discover')
+  const [menuOpen, setMenuOpen] = useState(false)
   const [inputs, setInputs] = useState(DEFAULT_INPUTS)
   const [results, setResults] = useState(MOCK_ARTISTS)
-  const [seedProfiles, setSeedProfiles] = useState([])
   const [history, setHistory] = useState(readHistory)
   const [filters, setFilters] = useState({
     tag: 'all',
@@ -231,7 +231,6 @@ function App() {
       )
 
       setNotFound(missed)
-      setSeedProfiles(data.seeds || [])
       setResults(scored)
       setSelectedArtist(scored[0] || null)
       setHistory(
@@ -265,7 +264,6 @@ function App() {
         error={error}
         notFound={notFound}
         results={filteredResults}
-        seedProfiles={seedProfiles}
         selectArtist={selectArtist}
       />
     ),
@@ -277,21 +275,47 @@ function App() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand-lockup pixel-label">
+      <header className="site-chrome" aria-label="Site navigation">
+        <button
+          className={menuOpen ? 'chrome-toggle active' : 'chrome-toggle'}
+          type="button"
+          onClick={() => setMenuOpen((current) => !current)}
+          aria-label="Open navigation"
+          aria-expanded={menuOpen}
+        >
+          <span />
+        </button>
+        <div className="top-wordmark pixel-label" aria-label="Subsurface Spotify KNN Finder">
           <p>SUBSURFACE</p>
           <span>SPOTIFY KNN FINDER</span>
         </div>
+      </header>
 
-        <nav className="nav-list" aria-label="Primary navigation">
+      <button
+        className={menuOpen ? 'nav-scrim open' : 'nav-scrim'}
+        type="button"
+        aria-label="Close navigation"
+        onClick={() => setMenuOpen(false)}
+      />
+
+      <aside className={menuOpen ? 'liquid-menu open' : 'liquid-menu'} aria-hidden={!menuOpen}>
+        <div className="drawer-brand pixel-label">
+          <p>SUBSURFACE</p>
+          <span>DISCOVERY INDEX</span>
+        </div>
+
+        <nav className="liquid-nav-list" aria-label="Primary navigation">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon
             return (
               <button
                 key={item.id}
-                className={activePage === item.id ? 'nav-item active' : 'nav-item'}
+                className={activePage === item.id ? 'liquid-nav-item active' : 'liquid-nav-item'}
                 type="button"
-                onClick={() => setActivePage(item.id)}
+                onClick={() => {
+                  setActivePage(item.id)
+                  setMenuOpen(false)
+                }}
                 title={item.label}
               >
                 <Icon size={18} />
@@ -311,7 +335,7 @@ function App() {
   )
 }
 
-function DiscoverPage({ inputs, updateInput, findArtists, loading, filters, setFilters, error, notFound, results, seedProfiles, selectArtist }) {
+function DiscoverPage({ inputs, updateInput, findArtists, loading, filters, setFilters, error, notFound, results, selectArtist }) {
   return (
     <section className="page-grid discover-grid">
       <div className="hero-panel immersive-panel">
@@ -322,13 +346,6 @@ function DiscoverPage({ inputs, updateInput, findArtists, loading, filters, setF
             Enter three artists. Subsurface builds a Spotify-based artist vector from followers, popularity, genres and
             top-track networks, then ranks nearby artists with a KNN-style similarity score.
           </p>
-          {seedProfiles.length > 0 && (
-            <div className="seed-summary">
-              {seedProfiles.slice(0, 3).map((seed) => (
-                <span key={seed.id}>{seed.name}: {formatNumber(seed.monthlyListeners || seed.followers)} monthly listeners</span>
-              ))}
-            </div>
-          )}
         </div>
 
         <div className="search-console glass-panel">
