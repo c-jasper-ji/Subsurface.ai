@@ -203,6 +203,8 @@ export default async function handler(req, res) {
           if (seedIds.has(artist.id)) return
           const existing = candidateMap.get(artist.id) || {
             id: artist.id,
+            name: artist.name,
+            artist: null,
             sources: new Set(),
             sourceCount: 0,
           }
@@ -224,9 +226,12 @@ export default async function handler(req, res) {
       if (seedIds.has(artist.id) || seedNames.has(normalizeText(artist.name))) return
       const existing = candidateMap.get(artist.id) || {
         id: artist.id,
+        name: artist.name,
+        artist,
         sources: new Set(),
         sourceCount: 0,
       }
+      existing.artist = existing.artist || artist
       existing.sources.add('genre match')
       existing.sourceCount = existing.sources.size
       candidateMap.set(artist.id, existing)
@@ -238,7 +243,17 @@ export default async function handler(req, res) {
       return
     }
 
-    const artistDetails = (await Promise.all(candidateIds.map((id) => getArtistById(id, token)))).filter(Boolean)
+    const artistDetails = (
+      await Promise.all(
+        candidateIds.map(async (id) => {
+          const meta = candidateMap.get(id)
+          if (meta?.artist) return meta.artist
+          const byId = await getArtistById(id, token)
+          if (byId) return byId
+          return meta?.name ? getArtistByName(meta.name, token) : null
+        })
+      )
+    ).filter(Boolean)
 
     const maxFollowers = Math.max(...artistDetails.map((artist) => artist.followers?.total || 0), 1)
     const context = { seedGenres, avgPopularity, maxFollowers, seedCount: seedArtists.length }
