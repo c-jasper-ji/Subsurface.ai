@@ -103,7 +103,14 @@ async function getPublicSpotifyMetrics(artistId) {
       ''
     const monthlyText = description.match(/([\d.]+\s*[KMB]?)\s+monthly listeners/i)?.[1]
     const monthlyListeners = monthlyText ? parseCompactNumber(monthlyText) : 0
-    return { monthlyListeners }
+    const relatedArtistIds = [
+      ...new Set(
+        [...html.matchAll(/\/artist\/([A-Za-z0-9]+)/g)]
+          .map((match) => match[1])
+          .filter((id) => id && id !== artistId)
+      ),
+    ].slice(0, 10)
+    return { monthlyListeners, relatedArtistIds }
   } catch {
     return {}
   }
@@ -170,13 +177,13 @@ function addCandidate(candidateMap, artist, source, candidateData = null) {
   if (!artist?.id) return
   const existing = candidateMap.get(artist.id) || {
     id: artist.id,
-    name: artist.name,
+    name: artist.name || '',
     artist: candidateData,
     queryGenres: new Set(),
     sources: new Set(),
     sourceCount: 0,
   }
-  existing.name = existing.name || artist.name
+  existing.name = existing.name || artist.name || ''
   existing.artist = existing.artist || candidateData
   if (source.genre) existing.queryGenres.add(source.genre)
   if (source.label) existing.sources.add(source.label)
@@ -283,6 +290,13 @@ export default async function handler(req, res) {
 
     const seedTracks = await Promise.all(normalizedSeeds.map((artist) => getTopTracks(artist.id, token)))
     const candidateMap = new Map()
+
+    seedMetrics.forEach((metrics, index) => {
+      ;(metrics?.relatedArtistIds || []).forEach((id) => {
+        if (seedIds.has(id)) return
+        addCandidate(candidateMap, { id, name: '' }, { label: normalizedSeeds[index].name })
+      })
+    })
 
     seedTracks.forEach((tracks, index) => {
       tracks.forEach((track) => {
