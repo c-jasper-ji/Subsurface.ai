@@ -128,7 +128,14 @@ async function getPublicSpotifyMetrics(artistId) {
       ''
     const monthlyText = description.match(/([\d.]+\s*[KMB]?)\s+monthly listeners/i)?.[1]
     const monthlyListeners = monthlyText ? parseCompactNumber(monthlyText) : 0
-    return { monthlyListeners }
+    const relatedArtistIds = [
+      ...new Set(
+        [...html.matchAll(/\/artist\/([A-Za-z0-9]+)/g)]
+          .map((match) => match[1])
+          .filter((id) => id && id !== artistId)
+      ),
+    ].slice(0, 8)
+    return { monthlyListeners, relatedArtistIds }
   } catch {
     return {}
   }
@@ -321,6 +328,24 @@ export default async function handler(req, res) {
         candidateMap.set(artist.id, existing)
       })
     })
+
+    if (!candidateMap.size) {
+      seedMetrics.forEach((metrics, index) => {
+        ;(metrics?.relatedArtistIds || []).forEach((id) => {
+          if (seedIds.has(id)) return
+          const existing = candidateMap.get(id) || {
+            id,
+            name: '',
+            artist: null,
+            sources: new Set(),
+            sourceCount: 0,
+          }
+          existing.sources.add(normalizedSeeds[index].name)
+          existing.sourceCount = existing.sources.size
+          candidateMap.set(id, existing)
+        })
+      })
+    }
 
     const candidateIds = [...candidateMap.keys()].slice(0, 24)
     if (!candidateIds.length) {
