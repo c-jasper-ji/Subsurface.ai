@@ -110,12 +110,16 @@ async function getPublicSpotifyMetrics(artistId) {
 }
 
 async function searchArtists(query, token, limit = 8) {
-  const data = await spotify('/search', token, {
-    q: query,
-    type: 'artist',
-    limit: String(limit),
-  })
-  return data.artists?.items || []
+  try {
+    const data = await spotify('/search', token, {
+      q: query,
+      type: 'artist',
+      limit: String(limit),
+    })
+    return data.artists?.items || []
+  } catch {
+    return []
+  }
 }
 
 async function getTopTracks(artistId, token) {
@@ -227,7 +231,7 @@ export default async function handler(req, res) {
 
   try {
     const token = await getSpotifyToken()
-    const seedArtists = (await Promise.all(seeds.map((name) => getArtistByName(name, token)))).filter(Boolean)
+    const seedArtists = (await Promise.all(seeds.map((name) => getArtistByName(name, token).catch(() => null)))).filter(Boolean)
     const seedIds = new Set(seedArtists.map((artist) => artist.id))
     const seedNames = new Set(seedArtists.map((artist) => normalizeText(artist.name)))
     const seedGenres = [...new Set(seedArtists.flatMap((artist) => artist.genres || []))]
