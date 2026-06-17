@@ -78,6 +78,7 @@ async function getArtistByName(name, token) {
     q: name,
     type: 'artist',
     limit: '1',
+    market: 'US',
   })
   return data.artists?.items?.[0] || null
 }
@@ -115,6 +116,7 @@ async function searchArtists(query, token, limit = 8) {
       q: query,
       type: 'artist',
       limit: String(limit),
+      market: 'US',
     })
     return data.artists?.items || []
   } catch {
