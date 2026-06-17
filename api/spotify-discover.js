@@ -78,16 +78,20 @@ async function searchArtists(query, token, limit = 8) {
 }
 
 async function getTopTracks(artistId, token) {
-  const data = await spotify(`/artists/${artistId}/top-tracks`, token, { market: 'US' })
-  return (data.tracks || []).slice(0, 5).map((track) => ({
-    id: track.id,
-    name: track.name,
-    popularity: track.popularity ?? 0,
-    artists: (track.artists || []).map((artist) => ({
-      id: artist.id,
-      name: artist.name,
-    })),
-  }))
+  try {
+    const data = await spotify(`/artists/${artistId}/top-tracks`, token, { market: 'US' })
+    return (data.tracks || []).slice(0, 5).map((track) => ({
+      id: track.id,
+      name: track.name,
+      popularity: track.popularity ?? 0,
+      artists: (track.artists || []).map((artist) => ({
+        id: artist.id,
+        name: artist.name,
+      })),
+    }))
+  } catch {
+    return []
+  }
 }
 
 function genreOverlap(candidateGenres, seedGenres) {
