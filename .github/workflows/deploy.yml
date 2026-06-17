@@ -34,7 +34,6 @@ jobs:
         run: npm run build
         env:
           GITHUB_PAGES: true
-          VITE_LASTFM_KEY: ${{ secrets.VITE_LASTFM_KEY }}
           VITE_SPOTIFY_CLIENT_ID: ${{ secrets.VITE_SPOTIFY_CLIENT_ID }}
           VITE_SPOTIFY_CLIENT_SECRET: ${{ secrets.VITE_SPOTIFY_CLIENT_SECRET }}
 

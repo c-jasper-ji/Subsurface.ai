@@ -1,81 +1,92 @@
 import { useMemo, useState } from 'react'
 import {
-  Activity,
   BarChart3,
-  BookOpen,
   Clock3,
-  Disc3,
   ExternalLink,
   Filter,
-  Headphones,
   History,
-  Info,
   Loader2,
-  Music2,
   Search,
   SlidersHorizontal,
   Sparkles,
-  Star,
-  TrendingUp,
   UserRound,
+  X,
 } from 'lucide-react'
 import './App.css'
 
-const LASTFM_KEY = import.meta.env.VITE_LASTFM_KEY
-const LASTFM_BASE = 'https://ws.audioscrobbler.com/2.0/'
-const HISTORY_KEY = 'subsurface-next-history'
+const HISTORY_KEY = 'subsurface-spotify-knn-history'
 
 const DEFAULT_INPUTS = ['FKA twigs', 'James Blake', 'Sampha']
 
 const DISCOVERY_TAGS = [
   'all',
-  'indie',
-  'electronic',
   'r&b',
   'soul',
-  'ambient',
-  'jazz',
-  'folk',
-  'rock',
+  'electronic',
+  'indie',
   'pop',
+  'hip hop',
+  'ambient',
+  'experimental',
 ]
 
 const MOCK_ARTISTS = [
   {
+    id: 'demo-kelela',
     name: 'Kelela',
-    listeners: 452000,
-    match: 0.92,
-    score: 91,
-    sources: ['FKA twigs', 'Sampha'],
-    tags: ['r&b', 'electronic', 'alternative'],
-    topTracks: ['Rewind', 'Contact', 'Enough for Love'],
-    bio: 'A future-facing vocalist blending club production, alternative R&B and intimate songwriting.',
+    followers: 598000,
+    listeners: 598000,
+    popularity: 52,
+    match: 0.91,
+    score: 88,
+    sources: ['FKA twigs', 'genre match'],
+    tags: ['alternative r&b', 'electronic', 'art pop'],
+    topTracks: ['Contact', 'Enough for Love', 'Rewind'],
+    bio: 'Spotify catalog profile built from artist followers, popularity, genres and top-track network signals.',
     spotifyUrl: 'https://open.spotify.com/search/Kelela',
     image: '',
+    cluster: 'Alt R&B / Soul',
+    noveltyScore: 0.72,
+    genreScore: 0.82,
+    popularityFit: 0.86,
   },
   {
+    id: 'demo-loraine-james',
     name: 'Loraine James',
-    listeners: 198000,
-    match: 0.87,
-    score: 88,
-    sources: ['James Blake'],
-    tags: ['electronic', 'experimental', 'ambient'],
-    topTracks: ['Let U Go', 'Simple Stuff', 'Glitch Bitch'],
-    bio: 'A London producer known for fractured rhythms, tactile synths and emotionally sharp club experiments.',
+    followers: 146000,
+    listeners: 146000,
+    popularity: 39,
+    match: 0.86,
+    score: 84,
+    sources: ['genre match'],
+    tags: ['experimental electronic', 'ambient', 'uk bass'],
+    topTracks: ['Simple Stuff', 'Let U Go', 'Glitch Bitch'],
+    bio: 'Spotify catalog profile built from artist followers, popularity, genres and top-track network signals.',
     spotifyUrl: 'https://open.spotify.com/search/Loraine%20James',
     image: '',
+    cluster: 'Electronic Edge',
+    noveltyScore: 0.9,
+    genreScore: 0.76,
+    popularityFit: 0.74,
   },
   {
+    id: 'demo-serpentwithfeet',
     name: 'serpentwithfeet',
-    listeners: 331000,
-    match: 0.84,
-    score: 85,
-    sources: ['Sampha', 'FKA twigs'],
-    tags: ['soul', 'experimental', 'r&b'],
+    followers: 311000,
+    listeners: 311000,
+    popularity: 44,
+    match: 0.83,
+    score: 81,
+    sources: ['Sampha', 'genre match'],
+    tags: ['indie soul', 'alternative r&b', 'experimental'],
     topTracks: ['Fellowship', 'Cherubim', 'Same Size Shoe'],
-    bio: 'A dramatic soul artist combining choral textures, queer intimacy and rich electronic production.',
+    bio: 'Spotify catalog profile built from artist followers, popularity, genres and top-track network signals.',
     spotifyUrl: 'https://open.spotify.com/search/serpentwithfeet',
     image: '',
+    cluster: 'Alt R&B / Soul',
+    noveltyScore: 0.82,
+    genreScore: 0.71,
+    popularityFit: 0.8,
   },
 ]
 
@@ -84,8 +95,7 @@ const NAV_ITEMS = [
   { id: 'artists', label: 'Artists', icon: UserRound },
   { id: 'history', label: 'History', icon: History },
   { id: 'taste', label: 'Taste Lab', icon: BarChart3 },
-  { id: 'replay', label: 'Replay 26', icon: Sparkles },
-  { id: 'algorithm', label: 'Algorithm', icon: BookOpen },
+  { id: 'replay', label: "Replay 26'", icon: Sparkles },
 ]
 
 const PLAYLIST_MOODS = {
@@ -93,10 +103,6 @@ const PLAYLIST_MOODS = {
   club: ['electronic', 'dance', 'house'],
   study: ['ambient', 'jazz', 'folk'],
   late: ['r&b', 'soul', 'indie'],
-}
-
-function normalize(value) {
-  return value.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim()
 }
 
 function formatNumber(value) {
@@ -117,72 +123,17 @@ function getInitials(name) {
     .toUpperCase()
 }
 
-async function lastfm(method, params) {
-  if (!LASTFM_KEY) {
-    throw new Error('Missing VITE_LASTFM_KEY in .env')
-  }
-
-  const url = new URL(LASTFM_BASE)
-  url.searchParams.set('method', method)
-  url.searchParams.set('api_key', LASTFM_KEY)
-  url.searchParams.set('format', 'json')
-
-  Object.entries(params).forEach(([key, value]) => {
-    url.searchParams.set(key, value)
-  })
-
+async function discoverSpotifyArtists(seedArtists) {
+  const url = new URL('/api/spotify-discover', window.location.origin)
+  url.searchParams.set('artists', seedArtists.join(','))
   const response = await fetch(url)
   const data = await response.json()
-  if (data.error) {
-    throw new Error(data.message || 'Last.fm request failed')
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Spotify discovery failed')
   }
+
   return data
-}
-
-async function getSpotifyArtist(name) {
-  const url = new URL('/api/spotify-artist', window.location.origin)
-  url.searchParams.set('name', name)
-
-  const response = await fetch(url)
-
-  if (!response.ok) return null
-  const data = await response.json()
-  return data.artist || null
-}
-
-async function enrichArtist(candidate) {
-  const [infoResult, tracksResult, spotifyResult] = await Promise.allSettled([
-    lastfm('artist.getinfo', { artist: candidate.name, autocorrect: '1' }),
-    lastfm('artist.gettoptracks', { artist: candidate.name, limit: '3', autocorrect: '1' }),
-    getSpotifyArtist(candidate.name),
-  ])
-
-  const info = infoResult.status === 'fulfilled' ? infoResult.value.artist : null
-  const tracks = tracksResult.status === 'fulfilled' ? tracksResult.value.toptracks?.track ?? [] : []
-  const spotify = spotifyResult.status === 'fulfilled' ? spotifyResult.value : null
-  const tags = [
-    ...(info?.tags?.tag ?? []).map((tag) => tag.name.toLowerCase()),
-    ...(spotify?.spotifyGenres ?? []),
-  ]
-
-  return {
-    ...candidate,
-    listeners: Number(info?.stats?.listeners ?? candidate.listeners ?? 0),
-    playcount: Number(info?.stats?.playcount ?? 0),
-    tags: [...new Set(tags)].slice(0, 5),
-    topTracks: tracks.map((track) => track.name).slice(0, 3),
-    bio: info?.bio?.summary?.replace(/<a\b[^>]*>.*?<\/a>/g, '').trim() || candidate.bio || '',
-    image: spotify?.image || '',
-    spotifyUrl: spotify?.spotifyUrl || makeSpotifySearch(candidate.name),
-    spotifyPopularity: spotify?.popularity ?? null,
-  }
-}
-
-function computeScore({ match, sourceCount, listeners }) {
-  const matchScore = Math.round(match * 62)
-  const focusScore = sourceCount === 1 ? 20 : sourceCount === 2 ? 14 : 8
-  const nicheScore = listeners > 0 ? Math.max(0, Math.round(18 - Math.log10(listeners) * 2.4)) : 9
-  return Math.min(99, Math.max(1, matchScore + focusScore + nicheScore))
 }
 
 function readHistory() {
@@ -207,14 +158,16 @@ function App() {
   const [activePage, setActivePage] = useState('discover')
   const [inputs, setInputs] = useState(DEFAULT_INPUTS)
   const [results, setResults] = useState(MOCK_ARTISTS)
+  const [seedProfiles, setSeedProfiles] = useState([])
   const [history, setHistory] = useState(readHistory)
   const [filters, setFilters] = useState({
     tag: 'all',
-    maxListeners: 750000,
+    maxFollowers: 1500000,
     minMatch: 20,
     mood: 'late',
   })
   const [selectedArtist, setSelectedArtist] = useState(MOCK_ARTISTS[0])
+  const [selectedSession, setSelectedSession] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notFound, setNotFound] = useState([])
@@ -223,7 +176,7 @@ function App() {
     const moodTags = PLAYLIST_MOODS[filters.mood] || []
     return results
       .filter((artist) => filters.tag === 'all' || artist.tags.some((tag) => tag.includes(filters.tag)))
-      .filter((artist) => !artist.listeners || artist.listeners <= filters.maxListeners)
+      .filter((artist) => !artist.followers || artist.followers <= filters.maxFollowers)
       .filter((artist) => artist.score >= filters.minMatch)
       .map((artist) => ({
         ...artist,
@@ -241,6 +194,12 @@ function App() {
       .map(([tag, count]) => ({ tag, count, width: Math.max(14, Math.round((count / Math.max(results.length, 1)) * 100)) }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 8)
+  }, [results])
+
+  const clusterStats = useMemo(() => {
+    const counts = new Map()
+    results.forEach((artist) => counts.set(artist.cluster || 'Discovery Cluster', (counts.get(artist.cluster || 'Discovery Cluster') || 0) + 1))
+    return [...counts.entries()].map(([cluster, count]) => ({ cluster, count }))
   }, [results])
 
   function updateInput(index, value) {
@@ -261,53 +220,14 @@ function App() {
     setNotFound([])
 
     try {
-      const responses = await Promise.allSettled(
-        filled.map((artist) => lastfm('artist.getsimilar', { artist, limit: '50', autocorrect: '1' }))
+      const data = await discoverSpotifyArtists(filled)
+      const scored = data.results || []
+      const missed = filled.filter(
+        (name) => !(data.seeds || []).some((seed) => seed.name.toLowerCase() === name.toLowerCase())
       )
 
-      const missed = filled.filter((_, index) => responses[index].status === 'rejected')
       setNotFound(missed)
-
-      const byName = new Map()
-      responses.forEach((response, index) => {
-        if (response.status !== 'fulfilled') return
-        const source = filled[index]
-        const list = response.value.similarartists?.artist ?? []
-        list.forEach((artist) => {
-          if (!artist.name || artist.name.includes(',') || /\s(&|x|and|feat\.?|ft\.?|vs\.?|\+)\s/i.test(artist.name)) return
-          const candidateName = normalize(artist.name)
-          if (filled.some((input) => candidateName.includes(normalize(input)) || normalize(input).includes(candidateName))) return
-
-          const existing = byName.get(candidateName)
-          const match = Number(artist.match || 0)
-          if (existing) {
-            existing.match = Math.max(existing.match, match)
-            existing.sources = [...new Set([...existing.sources, source])]
-          } else {
-            byName.set(candidateName, { name: artist.name, match, sources: [source] })
-          }
-        })
-      })
-
-      const candidates = [...byName.values()]
-        .map((artist) => ({ ...artist, sourceCount: artist.sources.length }))
-        .sort((a, b) => b.match - a.match)
-        .slice(0, 18)
-
-      const enriched = await Promise.all(candidates.map(enrichArtist))
-      const scored = enriched
-        .map((artist) => ({
-          ...artist,
-          score: computeScore({
-            match: artist.match,
-            sourceCount: artist.sourceCount,
-            listeners: artist.listeners,
-          }),
-        }))
-        .filter((artist) => artist.listeners > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 12)
-
+      setSeedProfiles(data.seeds || [])
       setResults(scored)
       setSelectedArtist(scored[0] || null)
       setHistory(
@@ -318,6 +238,8 @@ function App() {
           resultCount: scored.length,
           topArtist: scored[0]?.name || 'No result',
           dominantTags: scored.flatMap((artist) => artist.tags).slice(0, 6),
+          results: scored.slice(0, 12),
+          seeds: data.seeds || [],
         })
       )
     } catch (requestError) {
@@ -339,27 +261,22 @@ function App() {
         error={error}
         notFound={notFound}
         results={filteredResults}
+        seedProfiles={seedProfiles}
         selectArtist={selectArtist}
       />
     ),
     artists: <ArtistsPage artists={filteredResults} selectedArtist={selectedArtist} selectArtist={selectArtist} />,
-    history: <HistoryPage history={history} setHistory={setHistory} />,
-    taste: <TastePage stats={tasteStats} artists={filteredResults} />,
+    history: <HistoryPage history={history} setHistory={setHistory} setSelectedSession={setSelectedSession} />,
+    taste: <TastePage stats={tasteStats} clusterStats={clusterStats} artists={filteredResults} />,
     replay: <ReplayPage artists={filteredResults} history={history} />,
-    algorithm: <AlgorithmPage filters={filters} />,
   }
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand-lockup">
-          <div className="brand-mark">
-            <Disc3 size={24} />
-          </div>
-          <div>
-            <p>Subsurface</p>
-            <span>Music Finder Next</span>
-          </div>
+        <div className="brand-lockup pixel-label">
+          <p>SUBSURFACE</p>
+          <span>SPOTIFY KNN FINDER</span>
         </div>
 
         <nav className="nav-list" aria-label="Primary navigation">
@@ -379,39 +296,40 @@ function App() {
             )
           })}
         </nav>
-
-        <div className="sidebar-card">
-          <span className="eyebrow">API Status</span>
-          <strong>{LASTFM_KEY ? 'Last.fm ready' : 'Demo mode'}</strong>
-          <p>Spotify enrichment is routed through a serverless API so secrets stay off the frontend.</p>
-        </div>
       </aside>
 
-      <main className="content">{pages[activePage]}</main>
+      <main className="content page-fade" key={activePage}>
+        {pages[activePage]}
+      </main>
+
+      {selectedSession && <HistoryModal session={selectedSession} onClose={() => setSelectedSession(null)} />}
     </div>
   )
 }
 
-function DiscoverPage({ inputs, updateInput, findArtists, loading, filters, setFilters, error, notFound, results, selectArtist }) {
+function DiscoverPage({ inputs, updateInput, findArtists, loading, filters, setFilters, error, notFound, results, seedProfiles, selectArtist }) {
   return (
     <section className="page-grid discover-grid">
-      <div className="hero-panel">
+      <div className="hero-panel immersive-panel">
         <div className="hero-copy">
-          <span className="status-pill">
-            <Headphones size={15} />
-            Last.fm similarity + Spotify artist layer
-          </span>
-          <h1>A sharper workspace for discovering artists your feed keeps missing.</h1>
+          <span className="status-pill">Spotify catalog model</span>
+          <h1>Discover artists through followers, genre distance and catalog signals.</h1>
           <p>
-            Enter three artists you already love. The model combines similarity, listener scale, genre fit and niche depth
-            into a more deliberate discovery layer.
+            Enter three artists. Subsurface builds a Spotify-based artist vector from followers, popularity, genres and
+            top-track networks, then ranks nearby artists with a KNN-style similarity score.
           </p>
+          {seedProfiles.length > 0 && (
+            <div className="seed-summary">
+              {seedProfiles.slice(0, 3).map((seed) => (
+                <span key={seed.id}>{seed.name}: {formatNumber(seed.followers)} followers</span>
+              ))}
+            </div>
+          )}
         </div>
 
-        <div className="search-console">
+        <div className="search-console glass-panel">
           <div className="console-header">
             <span>Seed Artists</span>
-            <Music2 size={18} />
           </div>
           {inputs.map((value, index) => (
             <label className="artist-input" key={index}>
@@ -424,28 +342,28 @@ function DiscoverPage({ inputs, updateInput, findArtists, loading, filters, setF
             </label>
           ))}
           <button className="primary-action" type="button" onClick={findArtists} disabled={loading}>
-            {loading ? <Loader2 className="spin" size={18} /> : <Sparkles size={18} />}
-            <span>{loading ? 'Finding matches' : 'Run Discovery'}</span>
+            {loading && <Loader2 className="spin" size={18} />}
+            <span>{loading ? 'Building Spotify vectors' : 'Run Discovery'}</span>
           </button>
           {error && <p className="error-text">{error}</p>}
-          {notFound.length > 0 && <p className="warning-text">Not found: {notFound.join(', ')}</p>}
+          {notFound.length > 0 && <p className="warning-text">Could not map exactly: {notFound.join(', ')}</p>}
         </div>
       </div>
 
       <FilterPanel filters={filters} setFilters={setFilters} />
 
-      <section className="results-panel">
+      <section className="results-panel glass-panel">
         <div className="section-heading">
           <div>
-            <span className="eyebrow">Hidden Gems</span>
-            <h2>{results.length} refined recommendations</h2>
+            <span className="eyebrow">KNN Results</span>
+            <h2>{results.length} Spotify-ranked artists</h2>
           </div>
           <SlidersHorizontal size={20} />
         </div>
 
         <div className="artist-card-grid">
           {results.map((artist, index) => (
-            <ArtistCard key={artist.name} artist={artist} index={index} onOpen={() => selectArtist(artist)} />
+            <ArtistCard key={artist.id || artist.name} artist={artist} index={index} onOpen={() => selectArtist(artist)} />
           ))}
         </div>
       </section>
@@ -455,11 +373,11 @@ function DiscoverPage({ inputs, updateInput, findArtists, loading, filters, setF
 
 function FilterPanel({ filters, setFilters }) {
   return (
-    <section className="filter-panel">
+    <section className="filter-panel glass-panel">
       <div className="section-heading compact">
         <div>
           <span className="eyebrow">Filter Stack</span>
-          <h2>Control the recommendation lens</h2>
+          <h2>Shape the neighbor search</h2>
         </div>
         <Filter size={19} />
       </div>
@@ -478,19 +396,19 @@ function FilterPanel({ filters, setFilters }) {
       </div>
 
       <label className="range-control">
-        <span>Max listeners: {formatNumber(filters.maxListeners)}</span>
+        <span>Max Spotify followers: {formatNumber(filters.maxFollowers)}</span>
         <input
           type="range"
           min="50000"
-          max="2000000"
+          max="10000000"
           step="50000"
-          value={filters.maxListeners}
-          onChange={(event) => setFilters((current) => ({ ...current, maxListeners: Number(event.target.value) }))}
+          value={filters.maxFollowers}
+          onChange={(event) => setFilters((current) => ({ ...current, maxFollowers: Number(event.target.value) }))}
         />
       </label>
 
       <label className="range-control">
-        <span>Minimum model score: {filters.minMatch}</span>
+        <span>Minimum KNN score: {filters.minMatch}</span>
         <input
           type="range"
           min="1"
@@ -518,17 +436,17 @@ function FilterPanel({ filters, setFilters }) {
 
 function ArtistCard({ artist, index, onOpen }) {
   return (
-    <article className="artist-card">
+    <article className="artist-card glass-panel">
       <button className="artist-art" type="button" onClick={onOpen} title={`Open ${artist.name}`}>
         {artist.image ? <img src={artist.image} alt={`${artist.name} artist portrait`} /> : <span>{getInitials(artist.name)}</span>}
       </button>
       <div className="artist-card-body">
         <div className="card-topline">
-          <span>#{index + 1}</span>
+          <span>#{index + 1} - {artist.cluster}</span>
           <strong>{artist.score}</strong>
         </div>
         <h3>{artist.name}</h3>
-        <p>{formatNumber(artist.listeners)} listeners</p>
+        <p>{formatNumber(artist.followers)} Spotify followers - popularity {artist.popularity ?? 'n/a'}</p>
         <div className="mini-tags">
           {artist.tags.slice(0, 3).map((tag) => (
             <span key={tag}>{tag}</span>
@@ -551,11 +469,11 @@ function ArtistsPage({ artists, selectedArtist, selectArtist }) {
   const artist = selectedArtist || artists[0]
 
   return (
-    <section className="artist-detail-layout">
+    <section className="artist-detail-layout glass-page">
       <div className="section-heading wide">
         <div>
           <span className="eyebrow">Artist Intelligence</span>
-          <h1>Artist profiles with context, evidence and a clean Spotify handoff.</h1>
+          <h1>Spotify profiles ranked by proximity, scale and taste cluster.</h1>
         </div>
       </div>
 
@@ -563,7 +481,7 @@ function ArtistsPage({ artists, selectedArtist, selectArtist }) {
         {artists.map((item) => (
           <button
             className={artist?.name === item.name ? 'artist-strip-item active' : 'artist-strip-item'}
-            key={item.name}
+            key={item.id || item.name}
             type="button"
             onClick={() => selectArtist(item)}
           >
@@ -574,35 +492,32 @@ function ArtistsPage({ artists, selectedArtist, selectArtist }) {
       </div>
 
       {artist && (
-        <article className="artist-profile">
+        <article className="artist-profile glass-panel">
           <div className="profile-art">
             {artist.image ? <img src={artist.image} alt={`${artist.name} artist portrait`} /> : <span>{getInitials(artist.name)}</span>}
           </div>
           <div className="profile-copy">
-            <span className="status-pill">
-              <Star size={15} />
-              Model score {artist.score}
-            </span>
+            <span className="status-pill">KNN score {artist.score} - {artist.cluster}</span>
             <h2>{artist.name}</h2>
-            <p>{artist.bio || 'Bio unavailable from Last.fm. Spotify and Last.fm metadata will fill this area when API keys are present.'}</p>
+            <p>{artist.bio}</p>
 
             <div className="profile-metrics">
-              <Metric label="Listeners" value={formatNumber(artist.listeners)} />
-              <Metric label="Match" value={`${Math.round((artist.match || 0) * 100)}%`} />
-              <Metric label="Sources" value={artist.sources?.join(', ') || 'demo'} />
+              <Metric label="Spotify followers" value={formatNumber(artist.followers)} />
+              <Metric label="Popularity" value={artist.popularity ?? 'n/a'} />
+              <Metric label="Similarity" value={`${Math.round((artist.match || 0) * 100)}%`} />
             </div>
 
             <div className="detail-columns">
               <div>
-                <h3>Top hits</h3>
+                <h3>Top tracks</h3>
                 <ol className="track-list">
-                  {(artist.topTracks?.length ? artist.topTracks : ['Track data loading from Last.fm']).map((track) => (
+                  {(artist.topTracks?.length ? artist.topTracks : ['Spotify track data loading']).map((track) => (
                     <li key={track}>{track}</li>
                   ))}
                 </ol>
               </div>
               <div>
-                <h3>Belongs to filters</h3>
+                <h3>Feature tags</h3>
                 <div className="mini-tags large">
                   {artist.tags.map((tag) => (
                     <span key={tag}>{tag}</span>
@@ -631,13 +546,13 @@ function Metric({ label, value }) {
   )
 }
 
-function HistoryPage({ history, setHistory }) {
+function HistoryPage({ history, setHistory, setSelectedSession }) {
   return (
-    <section className="standard-page">
-      <div className="section-heading wide">
+    <section className="standard-page glass-page">
+      <div className="section-heading wide history-heading">
         <div>
           <span className="eyebrow">Search Memory</span>
-          <h1>Search history designed for return visits and follow-up discovery.</h1>
+          <h1>Saved sessions with recommendation detail.</h1>
         </div>
         <button
           className="ghost-action"
@@ -655,11 +570,11 @@ function HistoryPage({ history, setHistory }) {
         {history.length === 0 ? (
           <div className="empty-state">
             <Clock3 size={28} />
-            <p>Run a discovery search and it will appear here with the top artist and dominant tags.</p>
+            <p>Run a Spotify discovery search and the session will appear here.</p>
           </div>
         ) : (
           history.map((session) => (
-            <article className="history-item" key={session.id}>
+            <button className="history-item glass-panel" key={session.id} type="button" onClick={() => setSelectedSession(session)}>
               <span>{new Date(session.date).toLocaleString()}</span>
               <h3>{session.inputs.join(' + ')}</h3>
               <p>
@@ -670,7 +585,7 @@ function HistoryPage({ history, setHistory }) {
                   <span key={`${session.id}-${tag}-${index}`}>{tag}</span>
                 ))}
               </div>
-            </article>
+            </button>
           ))
         )}
       </div>
@@ -678,26 +593,60 @@ function HistoryPage({ history, setHistory }) {
   )
 }
 
-function TastePage({ stats, artists }) {
+function HistoryModal({ session, onClose }) {
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <section className="history-modal glass-panel" role="dialog" aria-modal="true" aria-label="Recommendation session details" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-heading">
+          <div>
+            <span className="eyebrow">Session Detail</span>
+            <h2>{session.inputs.join(' + ')}</h2>
+            <p>{new Date(session.date).toLocaleString()} - {session.resultCount} recommendations</p>
+          </div>
+          <button type="button" className="icon-action" onClick={onClose} aria-label="Close session detail">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="modal-results">
+          {(session.results || []).map((artist, index) => (
+            <article key={artist.id || artist.name}>
+              <span>{index + 1}</span>
+              <div>
+                <strong>{artist.name}</strong>
+                <p>{formatNumber(artist.followers)} followers - score {artist.score} - {artist.cluster}</p>
+              </div>
+              <a href={artist.spotifyUrl || makeSpotifySearch(artist.name)} target="_blank" rel="noreferrer">
+                <ExternalLink size={15} />
+              </a>
+            </article>
+          ))}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function TastePage({ stats, clusterStats, artists }) {
   const avgScore = Math.round(artists.reduce((sum, artist) => sum + artist.score, 0) / Math.max(artists.length, 1))
-  const avgListeners = Math.round(artists.reduce((sum, artist) => sum + (artist.listeners || 0), 0) / Math.max(artists.length, 1))
+  const avgFollowers = Math.round(artists.reduce((sum, artist) => sum + (artist.followers || 0), 0) / Math.max(artists.length, 1))
+  const avgPopularity = Math.round(artists.reduce((sum, artist) => sum + (artist.popularity || 0), 0) / Math.max(artists.length, 1))
 
   return (
-    <section className="analytics-page">
+    <section className="analytics-page glass-page">
       <div className="section-heading wide">
         <div>
-          <span className="eyebrow">Taste Visualization</span>
-          <h1>A compact visual readout of the listener's taste signature.</h1>
+          <span className="eyebrow">Taste Lab</span>
+          <h1>Genre gravity and cluster readout from Spotify vectors.</h1>
         </div>
       </div>
 
       <div className="analytics-grid">
-        <Metric label="Average model score" value={avgScore || 'n/a'} />
-        <Metric label="Avg. listener scale" value={formatNumber(avgListeners)} />
-        <Metric label="Dominant microgenres" value={stats.length} />
+        <Metric label="Average KNN score" value={avgScore || 'n/a'} />
+        <Metric label="Avg. followers" value={formatNumber(avgFollowers)} />
+        <Metric label="Avg. popularity" value={avgPopularity || 'n/a'} />
       </div>
 
-      <div className="chart-panel">
+      <div className="chart-panel glass-panel">
         <h2>Genre gravity</h2>
         {stats.map((item) => (
           <div className="bar-row" key={item.tag}>
@@ -711,138 +660,59 @@ function TastePage({ stats, artists }) {
       </div>
 
       <div className="insight-grid">
-        <InsightCard icon={TrendingUp} title="Exploration level" text="High scores with low listener counts suggest the user is ready for less mainstream discovery." />
-        <InsightCard icon={Activity} title="Genre bridge" text="Repeated tags across different seed artists identify cross-genre bridges for playlist strategy." />
-        <InsightCard icon={Info} title="Next data upgrade" text="Spotify listening history could turn these static results into a personalized clustering model." />
+        {clusterStats.map((item) => (
+          <article className="insight-card glass-panel" key={item.cluster}>
+            <h3>{item.cluster}</h3>
+            <p>{item.count} recommended artists sit in this taste cluster.</p>
+          </article>
+        ))}
       </div>
     </section>
-  )
-}
-
-function InsightCard({ icon: Icon, title, text }) {
-  return (
-    <article className="insight-card">
-      <Icon size={20} />
-      <h3>{title}</h3>
-      <p>{text}</p>
-    </article>
   )
 }
 
 function ReplayPage({ artists, history }) {
   const topArtist = artists[0]
   const tags = [...new Set(artists.flatMap((artist) => artist.tags))].slice(0, 5)
+  const clusters = [...new Set(artists.map((artist) => artist.cluster))].slice(0, 3)
 
   return (
-    <section className="replay-page">
-      <div className="replay-hero">
-        <span className="status-pill">
-          <Sparkles size={15} />
-          Replay 2026 upgraded
-        </span>
-        <h1>A yearly recap rebuilt as a discovery identity.</h1>
+    <section className="replay-page glass-page">
+      <div className="replay-hero immersive-panel">
+        <span className="status-pill">Replay 26'</span>
+        <h1>Your discovery identity, rebuilt from Spotify signals.</h1>
         <p>
-          Search sessions become a profile: top discovery lane, niche confidence, artist network and next playlist move.
+          A compact readout of top neighbor, taste cluster and playlist direction based on followers, genres and top-track networks.
         </p>
       </div>
 
-      <div className="replay-grid">
-        <article>
-          <span>Top hidden artist</span>
+      <div className="replay-grid condensed-grid">
+        <article className="glass-panel">
+          <span>Top neighbor</span>
           <strong>{topArtist?.name || 'Run a search'}</strong>
-          <p>{topArtist ? `${formatNumber(topArtist.listeners)} listeners - score ${topArtist.score}` : 'No recommendations yet.'}</p>
+          <p>{topArtist ? `${formatNumber(topArtist.followers)} followers - score ${topArtist.score}` : 'No recommendations yet.'}</p>
         </article>
-        <article>
-          <span>Discovery sessions</span>
+        <article className="glass-panel">
+          <span>Sessions</span>
           <strong>{history.length || 1}</strong>
-          <p>Stored locally for demo privacy and repeat exploration.</p>
+          <p>Local session memory for replay and comparison.</p>
         </article>
-        <article>
+        <article className="glass-panel">
           <span>Taste fingerprint</span>
-          <strong>{tags.slice(0, 2).join(' / ') || 'alternative / electronic'}</strong>
-          <p>{tags.join(', ')}</p>
+          <strong>{tags.slice(0, 2).join(' / ') || 'alt r&b / electronic'}</strong>
+          <p>{clusters.join(', ')}</p>
         </article>
       </div>
 
-      <div className="playlist-lane">
+      <div className="playlist-lane compact-lane glass-panel">
         {artists.slice(0, 6).map((artist, index) => (
-          <div className="playlist-node" key={artist.name}>
+          <div className="playlist-node" key={artist.id || artist.name}>
             <span>{index + 1}</span>
             <strong>{artist.name}</strong>
-            <p>{artist.tags.slice(0, 2).join(' - ')}</p>
+            <p>{artist.cluster}</p>
           </div>
         ))}
       </div>
-    </section>
-  )
-}
-
-function AlgorithmPage({ filters }) {
-  return (
-    <section className="algorithm-page">
-      <div className="section-heading wide">
-        <div>
-          <span className="eyebrow">Course Connection</span>
-          <h1>Transparent algorithm variables for Big Data, AI and ML discussion.</h1>
-        </div>
-      </div>
-
-      <div className="formula-card">
-        <span>Recommendation Score</span>
-        <strong>S = 0.62M + 0.20N + 0.18L + F</strong>
-        <p>
-          M is Last.fm similarity, N rewards niche source concentration, L adjusts for listener scale, and F is the
-          user-controlled filter layer currently set to {filters.tag}, {formatNumber(filters.maxListeners)} max listeners.
-        </p>
-      </div>
-
-      <div className="algorithm-steps">
-        {[
-          ['Collect', 'Call Last.fm similar artists for each seed artist.'],
-          ['Clean', 'Remove duplicates, typed artists, collaborations and ambiguous combined names.'],
-          ['Enrich', 'Fetch listeners, tags, top tracks, biography and Spotify profile data.'],
-          ['Score', 'Blend match strength, niche potential and user-selected filters.'],
-          ['Explain', 'Display the reason, variables and source artists on each card.'],
-        ].map(([title, text], index) => (
-          <article key={title}>
-            <span>0{index + 1}</span>
-            <h3>{title}</h3>
-            <p>{text}</p>
-          </article>
-        ))}
-      </div>
-
-      <table className="variable-table">
-        <thead>
-          <tr>
-            <th>Variable</th>
-            <th>Meaning</th>
-            <th>Product impact</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>M</td>
-            <td>Similarity match returned by Last.fm.</td>
-            <td>Raises artists musically close to the seed set.</td>
-          </tr>
-          <tr>
-            <td>N</td>
-            <td>Source concentration across one or two inputs.</td>
-            <td>Avoids overly generic artists that match everything.</td>
-          </tr>
-          <tr>
-            <td>L</td>
-            <td>Listener-count niche adjustment.</td>
-            <td>Pushes under-the-radar artists upward.</td>
-          </tr>
-          <tr>
-            <td>F</td>
-            <td>Genre, mood and threshold filters.</td>
-            <td>Lets users steer exploration without hiding the model.</td>
-          </tr>
-        </tbody>
-      </table>
     </section>
   )
 }
