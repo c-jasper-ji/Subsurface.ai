@@ -1,4 +1,19 @@
 let cachedToken = null
+const KNOWN_ARTIST_IDS = {
+  'fka twigs': '6nB0iY1cjSY1KyhYyuIIKH',
+  'james blake': '53KwLdlmrlCelAZMaLVZqU',
+  sampha: '2WoVwexZuODvclzULjPQtm',
+  'taylor swift': '06HL4z0CvFAxyc27GXpf02',
+  'billie eilish': '6qqNVTkY8uBg9cP3Jd7DAH',
+  'olivia rodrigo': '1McMsnEElThX1knmY4oliG',
+  drake: '3TVXtAsR1Inumwj472S9r4',
+  'kendrick lamar': '2YZyLoL8N0Wb9xBt1NhZWg',
+  'j cole': '6l3HvQ5sa6mXTsMTB19rO5',
+  'j. cole': '6l3HvQ5sa6mXTsMTB19rO5',
+  radiohead: '4Z8W4fKeB5YxbusRsdQVPb',
+  'the smile': '6styCzc1Ej4NxISL0LiigM',
+  'thom yorke': '4CvTDPKA6W06DRfBnZKrau',
+}
 
 function send(res, status, payload) {
   res.status(status).json(payload)
@@ -65,6 +80,10 @@ function parseCompactNumber(value) {
   return Math.round(number * multiplier)
 }
 
+function normalizeText(value) {
+  return value.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim()
+}
+
 function estimatePopularity(monthlyListeners) {
   if (!monthlyListeners) return null
   return Math.max(1, Math.min(100, Math.round((Math.log10(monthlyListeners + 1) / 8) * 100)))
@@ -107,6 +126,12 @@ function normalizeArtist(artist, topTracks = [], publicMetrics = {}) {
 }
 
 async function getArtistByName(name, token) {
+  const knownId = KNOWN_ARTIST_IDS[normalizeText(name)]
+  if (knownId) {
+    const knownArtist = await spotify(`/artists/${knownId}`, token)
+    if (knownArtist) return knownArtist
+  }
+
   const data = await spotify('/search', token, {
     q: name,
     type: 'artist',
