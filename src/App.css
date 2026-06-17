@@ -798,10 +798,11 @@ a {
 
 .artist-profile {
   display: grid;
-  grid-template-columns: minmax(260px, 0.72fr) minmax(0, 1fr);
+  grid-template-columns: minmax(250px, 0.62fr) minmax(0, 1fr);
   gap: 22px;
   padding: 16px;
   min-height: 560px;
+  min-width: 0;
 }
 
 .profile-art {
@@ -828,9 +829,10 @@ a {
 .profile-copy h2 {
   font-family: var(--font-display);
   font-weight: 650;
-  font-size: clamp(40px, 7vw, 82px);
+  font-size: clamp(38px, 5.6vw, 68px);
   margin: 18px 0 12px;
-  line-height: 0.95;
+  line-height: 0.98;
+  overflow-wrap: anywhere;
 }
 
 .profile-copy p {
