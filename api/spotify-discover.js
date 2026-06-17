@@ -315,23 +315,6 @@ export default async function handler(req, res) {
       })
     })
 
-    const nameResults = await Promise.all(
-      normalizedSeeds.map(async (seed) => ({
-        seed,
-        artists: [
-          ...(await searchArtists(seed.name, token, 12)),
-          ...(await searchArtists(`${seed.name} similar`, token, 8)),
-        ],
-      }))
-    )
-
-    nameResults.forEach(({ seed, artists }) => {
-      artists.forEach((artist) => {
-        if (seedIds.has(artist.id) || seedNames.has(normalizeText(artist.name))) return
-        addCandidate(candidateMap, artist, { label: seed.name }, artist)
-      })
-    })
-
     const hasRealSeedGenres = seedGenres.length > 0
     const genreQueries = (hasRealSeedGenres ? seedGenres : FALLBACK_GENRES).slice(0, 5)
     const genreResults = await Promise.all(
