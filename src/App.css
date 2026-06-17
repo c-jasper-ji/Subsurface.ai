@@ -92,6 +92,8 @@ a {
   height: 82px;
   z-index: 25;
   pointer-events: none;
+  background: linear-gradient(180deg, rgba(4, 6, 10, 0.72), rgba(4, 6, 10, 0));
+  backdrop-filter: blur(10px);
 }
 
 .chrome-toggle {
@@ -152,31 +154,38 @@ a {
 
 .top-wordmark {
   position: absolute;
-  top: 18px;
+  top: 16px;
   left: 50%;
   transform: translateX(-50%);
   text-align: center;
   pointer-events: auto;
-  padding: 0;
-  gap: 1px;
+  padding: 9px 18px 8px;
+  gap: 2px;
+  min-width: 210px;
+  border: 1px solid rgba(226, 236, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(10, 15, 23, 0.42);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 20px 55px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(18px) saturate(1.2);
 }
 
 .top-wordmark p,
 .drawer-brand p {
   margin: 0;
-  font-family: var(--font-pixel);
-  font-size: clamp(19px, 2.4vw, 26px);
-  font-weight: 800;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
   letter-spacing: 0;
   color: #f6f8ff;
-  text-shadow: 0 0 20px rgba(155, 188, 255, 0.38);
+  text-shadow: 0 0 20px rgba(155, 188, 255, 0.26);
 }
 
 .top-wordmark span,
 .drawer-brand span {
-  font-family: var(--font-pixel);
-  color: #9bbcff;
-  font-size: 12px;
+  font-family: var(--font-ui);
+  color: #a8b7ca;
+  font-size: 11px;
+  text-transform: uppercase;
   letter-spacing: 0;
 }
 
@@ -243,6 +252,10 @@ a {
   display: grid;
   gap: 3px;
   margin-bottom: 48px;
+}
+
+.drawer-brand p {
+  font-size: 22px;
 }
 
 .liquid-nav-list {
@@ -416,15 +429,16 @@ a {
 }
 
 .hero-copy h1 {
-  max-width: 880px;
+  max-width: 760px;
+  font-size: clamp(36px, 5vw, 60px);
 }
 
 .hero-copy p,
 .replay-hero p,
 .formula-card p {
-  max-width: 620px;
+  max-width: 560px;
   color: var(--muted);
-  line-height: 1.75;
+  line-height: 1.62;
   font-size: 16px;
 }
 
@@ -775,59 +789,23 @@ a {
   background: rgba(8, 12, 18, 0.36);
 }
 
-.artist-strip {
-  display: flex;
-  gap: 10px;
-  overflow-x: auto;
-  padding-bottom: 12px;
-  margin-bottom: 14px;
-}
-
-.artist-strip-item {
-  min-width: 170px;
-  height: 64px;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
-  background: #0b1118;
-  color: var(--text);
+.artist-workspace {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  padding: 8px;
-  text-align: left;
-}
-
-.artist-strip-item.active {
-  border-color: rgba(155, 188, 255, 0.65);
-}
-
-.artist-strip-item img,
-.artist-strip-item span {
-  width: 48px;
-  height: 48px;
-  border-radius: 6px;
-  background: var(--panel-3);
-  display: grid;
-  place-items: center;
-  font-size: 16px;
-}
-
-.artist-strip-item strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 350px);
+  gap: 16px;
+  align-items: stretch;
 }
 
 .artist-profile {
   display: grid;
-  grid-template-columns: minmax(260px, 0.78fr) minmax(0, 1fr);
-  gap: 24px;
-  padding: 18px;
+  grid-template-columns: minmax(260px, 0.72fr) minmax(0, 1fr);
+  gap: 22px;
+  padding: 16px;
+  min-height: 560px;
 }
 
 .profile-art {
-  min-height: 520px;
+  min-height: 528px;
   border-radius: var(--radius);
   overflow: hidden;
   display: grid;
@@ -844,12 +822,13 @@ a {
 .profile-copy {
   min-width: 0;
   align-self: center;
+  padding: 10px 8px;
 }
 
 .profile-copy h2 {
   font-family: var(--font-display);
   font-weight: 650;
-  font-size: clamp(38px, 8vw, 88px);
+  font-size: clamp(40px, 7vw, 82px);
   margin: 18px 0 12px;
   line-height: 0.95;
 }
@@ -921,6 +900,104 @@ a {
   padding: 0 16px;
   color: #07101e;
   background: var(--accent);
+}
+
+.artist-side-panel {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  min-height: 560px;
+}
+
+.artist-side-panel h2,
+.signal-card h2 {
+  margin: 8px 0 16px;
+  font-family: var(--font-display);
+  font-size: 24px;
+}
+
+.side-list {
+  display: grid;
+  gap: 10px;
+}
+
+.side-list button {
+  min-height: 72px;
+  border: 1px solid rgba(148, 166, 190, 0.16);
+  border-radius: var(--radius);
+  background: rgba(5, 9, 14, 0.38);
+  color: var(--text);
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  text-align: left;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.side-list button:hover {
+  transform: translateX(3px);
+  border-color: rgba(155, 188, 255, 0.44);
+  background: rgba(155, 188, 255, 0.08);
+}
+
+.side-list img,
+.side-list button > span {
+  width: 54px;
+  height: 54px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--panel-3);
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  font-weight: 900;
+}
+
+.side-list strong,
+.side-list small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-list small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.artist-signal-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.signal-card {
+  padding: 20px;
+}
+
+.signal-bars {
+  display: grid;
+  gap: 16px;
+}
+
+.signal-row {
+  display: grid;
+  gap: 8px;
+}
+
+.signal-row > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+}
+
+.signal-row strong {
+  color: var(--text);
 }
 
 .history-timeline {
@@ -1246,8 +1323,14 @@ a {
 @media (max-width: 1080px) {
   .discover-grid,
   .hero-panel,
-  .artist-profile {
+  .artist-profile,
+  .artist-workspace,
+  .artist-signal-grid {
     grid-template-columns: 1fr;
+  }
+
+  .artist-side-panel {
+    min-height: auto;
   }
 
   .profile-art {
@@ -1278,6 +1361,16 @@ a {
 
   .top-wordmark {
     top: 15px;
+    min-width: 180px;
+    padding-inline: 14px;
+  }
+
+  .top-wordmark p {
+    font-size: 13px;
+  }
+
+  .top-wordmark span {
+    font-size: 10px;
   }
 
   .content,
@@ -1302,6 +1395,7 @@ a {
   .insight-grid,
   .replay-grid,
   .detail-columns,
+  .artist-signal-grid,
   .algorithm-steps,
   .playlist-lane {
     grid-template-columns: 1fr;
@@ -1313,6 +1407,10 @@ a {
 
   .profile-art {
     min-height: 310px;
+  }
+
+  .artist-profile {
+    min-height: auto;
   }
 
   .bar-row {

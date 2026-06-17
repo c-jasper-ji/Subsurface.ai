@@ -135,6 +135,20 @@ async function getTopTracks(artistId, token) {
   }
 }
 
+async function getRecommendations(seedArtistIds, token) {
+  if (!seedArtistIds.length) return []
+  try {
+    const data = await spotify('/recommendations', token, {
+      seed_artists: seedArtistIds.slice(0, 5).join(','),
+      limit: '40',
+      market: 'US',
+    })
+    return data.tracks || []
+  } catch {
+    return []
+  }
+}
+
 function genreOverlap(candidateGenres, seedGenres) {
   const candidateTokens = new Set(candidateGenres.flatMap((genre) => normalizeText(genre).split(' ')))
   const seedTokens = new Set(seedGenres.flatMap((genre) => normalizeText(genre).split(' ')))
@@ -148,6 +162,24 @@ function normalizedFollowers(followers, maxFollowers) {
   return Math.log10(followers + 1) / Math.log10(maxFollowers + 1)
 }
 
+function addCandidate(candidateMap, artist, source, candidateData = null) {
+  if (!artist?.id) return
+  const existing = candidateMap.get(artist.id) || {
+    id: artist.id,
+    name: artist.name,
+    artist: candidateData,
+    queryGenres: new Set(),
+    sources: new Set(),
+    sourceCount: 0,
+  }
+  existing.name = existing.name || artist.name
+  existing.artist = existing.artist || candidateData
+  if (source.genre) existing.queryGenres.add(source.genre)
+  if (source.label) existing.sources.add(source.label)
+  existing.sourceCount = existing.sources.size
+  candidateMap.set(artist.id, existing)
+}
+
 function scoreArtist(candidate, context) {
   const audience = candidate.monthlyListeners || candidate.followers?.total || 0
   const candidatePopularity = candidate.popularity || estimatePopularity(candidate.monthlyListeners)
@@ -156,7 +188,12 @@ function scoreArtist(candidate, context) {
   const popularityFit = 1 - Math.abs(candidatePopularity - context.avgPopularity) / 100
   const genreScore = genreOverlap(candidate.genres || [], context.seedGenres)
   const networkScore = Math.min(1, (candidate.sourceCount || 0) / Math.max(context.seedCount, 1))
-  const score = genreScore * 42 + networkScore * 24 + noveltyScore * 20 + popularityFit * 14
+  const hasRealSeedGenres = context.hasRealSeedGenres ? 1 : 0
+  const score =
+    genreScore * (hasRealSeedGenres ? 38 : 18) +
+    networkScore * 42 +
+    noveltyScore * 15 +
+    popularityFit * 5
 
   return {
     score: Math.round(Math.max(1, Math.min(99, score))),
@@ -247,21 +284,38 @@ export default async function handler(req, res) {
       tracks.forEach((track) => {
         track.artists.forEach((artist) => {
           if (seedIds.has(artist.id)) return
-          const existing = candidateMap.get(artist.id) || {
-            id: artist.id,
-            name: artist.name,
-            artist: null,
-            sources: new Set(),
-            sourceCount: 0,
-          }
-          existing.sources.add(normalizedSeeds[index].name)
-          existing.sourceCount = existing.sources.size
-          candidateMap.set(artist.id, existing)
+          addCandidate(candidateMap, artist, { label: normalizedSeeds[index].name })
         })
       })
     })
 
-    const genreQueries = (seedGenres.length ? seedGenres : FALLBACK_GENRES).slice(0, 5)
+    const recommendationTracks = await getRecommendations(normalizedSeeds.map((artist) => artist.id), token)
+    recommendationTracks.forEach((track) => {
+      track.artists?.forEach((artist) => {
+        if (seedIds.has(artist.id) || seedNames.has(normalizeText(artist.name))) return
+        addCandidate(candidateMap, artist, { label: 'Spotify recommendation' })
+      })
+    })
+
+    const nameResults = await Promise.all(
+      normalizedSeeds.map(async (seed) => ({
+        seed,
+        artists: [
+          ...(await searchArtists(seed.name, token, 12)),
+          ...(await searchArtists(`${seed.name} similar`, token, 8)),
+        ],
+      }))
+    )
+
+    nameResults.forEach(({ seed, artists }) => {
+      artists.forEach((artist) => {
+        if (seedIds.has(artist.id) || seedNames.has(normalizeText(artist.name))) return
+        addCandidate(candidateMap, artist, { label: seed.name }, artist)
+      })
+    })
+
+    const hasRealSeedGenres = seedGenres.length > 0
+    const genreQueries = (hasRealSeedGenres ? seedGenres : FALLBACK_GENRES).slice(0, 5)
     const genreResults = await Promise.all(
       genreQueries.map(async (genre) => ({
         genre,
@@ -275,24 +329,11 @@ export default async function handler(req, res) {
     genreResults.forEach(({ genre, artists }) => {
       artists.forEach((artist) => {
         if (seedIds.has(artist.id) || seedNames.has(normalizeText(artist.name))) return
-        const existing = candidateMap.get(artist.id) || {
-          id: artist.id,
-          name: artist.name,
-          artist,
-          queryGenres: new Set(),
-          sources: new Set(),
-          sourceCount: 0,
-        }
-        existing.artist = existing.artist || artist
-        existing.queryGenres = existing.queryGenres || new Set()
-        existing.queryGenres.add(genre)
-        existing.sources.add('genre match')
-        existing.sourceCount = existing.sources.size
-        candidateMap.set(artist.id, existing)
+        addCandidate(candidateMap, artist, { label: hasRealSeedGenres ? 'genre match' : 'catalog fallback', genre }, artist)
       })
     })
 
-    const candidateIds = [...candidateMap.keys()].slice(0, 24)
+    const candidateIds = [...candidateMap.keys()].slice(0, 40)
     if (!candidateIds.length) {
       send(res, 200, { seeds: seedArtists, results: [] })
       return
@@ -318,7 +359,7 @@ export default async function handler(req, res) {
       popularity: artist.popularity || estimatePopularity(publicMetrics[index]?.monthlyListeners || 0),
     }))
     const maxFollowers = Math.max(...metricArtists.map((artist) => artist.monthlyListeners || artist.followers?.total || 0), 1)
-    const context = { seedGenres: genreQueries, avgPopularity, maxFollowers, seedCount: seedArtists.length }
+    const context = { seedGenres: genreQueries, avgPopularity, maxFollowers, seedCount: seedArtists.length, hasRealSeedGenres }
 
     const enriched = await Promise.all(
       metricArtists
@@ -338,7 +379,7 @@ export default async function handler(req, res) {
       .sort((a, b) => b.score - a.score)
       .slice(0, 12)
 
-    res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=86400')
+    res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=600')
     send(res, 200, {
       seeds: seedArtists.map((artist) => ({
         id: artist.id,

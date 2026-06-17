@@ -285,9 +285,9 @@ function App() {
         >
           <span />
         </button>
-        <div className="top-wordmark pixel-label" aria-label="Subsurface Spotify KNN Finder">
+        <div className="top-wordmark brand-label" aria-label="Subsurface Spotify KNN Finder">
           <p>SUBSURFACE</p>
-          <span>SPOTIFY KNN FINDER</span>
+          <span>Spotify KNN Finder</span>
         </div>
       </header>
 
@@ -299,9 +299,9 @@ function App() {
       />
 
       <aside className={menuOpen ? 'liquid-menu open' : 'liquid-menu'} aria-hidden={!menuOpen}>
-        <div className="drawer-brand pixel-label">
+        <div className="drawer-brand brand-label">
           <p>SUBSURFACE</p>
-          <span>DISCOVERY INDEX</span>
+          <span>Discovery Index</span>
         </div>
 
         <nav className="liquid-nav-list" aria-label="Primary navigation">
@@ -341,10 +341,10 @@ function DiscoverPage({ inputs, updateInput, findArtists, loading, filters, setF
       <div className="hero-panel immersive-panel">
         <div className="hero-copy">
           <span className="status-pill">Spotify catalog model</span>
-          <h1>Discover artists through followers, genre distance and catalog signals.</h1>
+          <h1>Find the artists Spotify keeps just below the surface.</h1>
           <p>
-            Enter three artists. Subsurface builds a Spotify-based artist vector from followers, popularity, genres and
-            top-track networks, then ranks nearby artists with a KNN-style similarity score.
+            Enter three names. Subsurface compares listener scale, popularity, genres and track networks, then returns a
+            tighter set of nearby artists.
           </p>
         </div>
 
@@ -488,71 +488,115 @@ function ArtistCard({ artist, index, onOpen }) {
 
 function ArtistsPage({ artists, selectedArtist, selectArtist }) {
   const artist = selectedArtist || artists[0]
+  const neighborArtists = artists.filter((item) => item.name !== artist?.name).slice(0, 5)
+  const signalRows = artist
+    ? [
+        { label: 'Genre fit', value: Math.round((artist.genreScore || 0) * 100) },
+        { label: 'Novelty', value: Math.round((artist.noveltyScore || 0) * 100) },
+        { label: 'Popularity fit', value: Math.round((artist.popularityFit || 0) * 100) },
+      ]
+    : []
 
   return (
     <section className="artist-detail-layout glass-page">
       <div className="section-heading wide">
         <div>
           <span className="eyebrow">Artist Intelligence</span>
-          <h1>Spotify profiles ranked by proximity, scale and taste cluster.</h1>
+          <h1>A fuller read on each recommendation.</h1>
         </div>
       </div>
 
-      <div className="artist-strip">
-        {artists.map((item) => (
-          <button
-            className={artist?.name === item.name ? 'artist-strip-item active' : 'artist-strip-item'}
-            key={item.id || item.name}
-            type="button"
-            onClick={() => selectArtist(item)}
-          >
-            {item.image ? <img src={item.image} alt="" /> : <span>{getInitials(item.name)}</span>}
-            <strong>{item.name}</strong>
-          </button>
-        ))}
-      </div>
-
       {artist && (
-        <article className="artist-profile glass-panel">
-          <div className="profile-art">
-            {artist.image ? <img src={artist.image} alt={`${artist.name} artist portrait`} /> : <span>{getInitials(artist.name)}</span>}
-          </div>
-          <div className="profile-copy">
-            <span className="status-pill">KNN score {artist.score} - {artist.cluster}</span>
-            <h2>{artist.name}</h2>
-            <p>{artist.bio}</p>
-
-            <div className="profile-metrics">
-              <Metric label="Monthly listeners" value={formatNumber(audienceValue(artist))} />
-              <Metric label="Popularity" value={artist.popularity ?? 'scored'} />
-              <Metric label="Similarity" value={`${Math.round((artist.match || 0) * 100)}%`} />
+        <div className="artist-workspace">
+          <article className="artist-profile glass-panel">
+            <div className="profile-art">
+              {artist.image ? <img src={artist.image} alt={`${artist.name} artist portrait`} /> : <span>{getInitials(artist.name)}</span>}
             </div>
+            <div className="profile-copy">
+              <span className="status-pill">KNN score {artist.score} - {artist.cluster}</span>
+              <h2>{artist.name}</h2>
+              <p>{artist.bio}</p>
 
-            <div className="detail-columns">
-              <div>
-                <h3>Top tracks</h3>
-                <ol className="track-list">
-                  {(artist.topTracks?.length ? artist.topTracks : ['Spotify track data loading']).map((track) => (
-                    <li key={track}>{track}</li>
-                  ))}
-                </ol>
+              <div className="profile-metrics">
+                <Metric label="Monthly listeners" value={formatNumber(audienceValue(artist))} />
+                <Metric label="Popularity" value={artist.popularity ?? 'scored'} />
+                <Metric label="Similarity" value={`${Math.round((artist.match || 0) * 100)}%`} />
               </div>
-              <div>
-                <h3>Feature tags</h3>
-                <div className="mini-tags large">
-                  {artist.tags.map((tag) => (
-                    <span key={tag}>{tag}</span>
-                  ))}
+
+              <div className="detail-columns">
+                <div>
+                  <h3>Top tracks</h3>
+                  <ol className="track-list">
+                    {(artist.topTracks?.length ? artist.topTracks : ['Spotify track data loading']).map((track) => (
+                      <li key={track}>{track}</li>
+                    ))}
+                  </ol>
+                </div>
+                <div>
+                  <h3>Feature tags</h3>
+                  <div className="mini-tags large">
+                    {artist.tags.map((tag) => (
+                      <span key={tag}>{tag}</span>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <a className="spotify-link" href={artist.spotifyUrl || makeSpotifySearch(artist.name)} target="_blank" rel="noreferrer">
-              <ExternalLink size={17} />
-              Open Spotify profile
-            </a>
-          </div>
-        </article>
+              <a className="spotify-link" href={artist.spotifyUrl || makeSpotifySearch(artist.name)} target="_blank" rel="noreferrer">
+                <ExternalLink size={17} />
+                Open Spotify profile
+              </a>
+            </div>
+          </article>
+
+          <aside className="artist-side-panel glass-panel">
+            <span className="eyebrow">Recommendation Queue</span>
+            <h2>Nearby artists</h2>
+            <div className="side-list">
+              {neighborArtists.map((item, index) => (
+                <button key={item.id || item.name} type="button" onClick={() => selectArtist(item)}>
+                  {item.image ? <img src={item.image} alt="" /> : <span>{getInitials(item.name)}</span>}
+                  <div>
+                    <strong>{item.name}</strong>
+                    <small>#{index + 2} - score {item.score}</small>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {artist && (
+        <div className="artist-signal-grid">
+          <section className="signal-card glass-panel">
+            <span className="eyebrow">Signal Mix</span>
+            <h2>Why this artist surfaced</h2>
+            <div className="signal-bars">
+              {signalRows.map((row) => (
+                <div className="signal-row" key={row.label}>
+                  <div>
+                    <span>{row.label}</span>
+                    <strong>{row.value}%</strong>
+                  </div>
+                  <div className="bar-track">
+                    <div style={{ width: `${Math.max(6, row.value)}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="signal-card glass-panel">
+            <span className="eyebrow">Source Links</span>
+            <h2>Connection trail</h2>
+            <div className="mini-tags large">
+              {(artist.sources?.length ? artist.sources : ['Spotify recommendation']).map((source) => (
+                <span key={source}>{source}</span>
+              ))}
+            </div>
+          </section>
+        </div>
       )}
     </section>
   )
