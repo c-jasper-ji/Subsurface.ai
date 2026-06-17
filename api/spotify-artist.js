@@ -38,6 +38,56 @@ async function getSpotifyToken() {
   return cachedToken.value
 }
 
+async function spotify(path, token, params = {}) {
+  const url = new URL(`https://api.spotify.com/v1${path}`)
+  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value))
+
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+
+  if (!response.ok) {
+    throw new Error(`Spotify request failed: ${path}`)
+  }
+
+  return response.json()
+}
+
+function normalizeArtist(artist, topTracks = []) {
+  return {
+    id: artist.id,
+    name: artist.name,
+    followers: artist.followers?.total ?? 0,
+    spotifyUrl: artist.external_urls?.spotify || '',
+    image: artist.images?.[0]?.url || '',
+    spotifyGenres: artist.genres || [],
+    popularity: artist.popularity ?? null,
+    topTracks,
+  }
+}
+
+async function getArtistByName(name, token) {
+  const data = await spotify('/search', token, {
+    q: name,
+    type: 'artist',
+    limit: '1',
+  })
+  return data.artists?.items?.[0] || null
+}
+
+async function getTopTracks(artistId, token) {
+  const data = await spotify(`/artists/${artistId}/top-tracks`, token, { market: 'US' })
+  return (data.tracks || []).slice(0, 5).map((track) => ({
+    id: track.id,
+    name: track.name,
+    popularity: track.popularity ?? 0,
+    artists: (track.artists || []).map((artist) => ({
+      id: artist.id,
+      name: artist.name,
+    })),
+  }))
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
@@ -56,36 +106,16 @@ export default async function handler(req, res) {
 
   try {
     const token = await getSpotifyToken()
-    const url = new URL('https://api.spotify.com/v1/search')
-    url.searchParams.set('q', name)
-    url.searchParams.set('type', 'artist')
-    url.searchParams.set('limit', '1')
-
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-
-    if (!response.ok) {
-      throw new Error('Spotify artist search failed')
-    }
-
-    const data = await response.json()
-    const artist = data.artists?.items?.[0]
+    const artist = await getArtistByName(name, token)
 
     if (!artist) {
       send(res, 404, { artist: null })
       return
     }
 
+    const topTracks = await getTopTracks(artist.id, token)
     res.setHeader('Cache-Control', 's-maxage=86400, stale-while-revalidate=604800')
-    send(res, 200, {
-      artist: {
-        spotifyUrl: artist.external_urls?.spotify || '',
-        image: artist.images?.[0]?.url || '',
-        spotifyGenres: artist.genres || [],
-        popularity: artist.popularity ?? null,
-      },
-    })
+    send(res, 200, { artist: normalizeArtist(artist, topTracks) })
   } catch (error) {
     send(res, 500, { error: error.message || 'Spotify lookup failed' })
   }
