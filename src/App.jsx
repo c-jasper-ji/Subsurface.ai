@@ -16,7 +16,7 @@ import './App.css'
 
 const HISTORY_KEY = 'subsurface-spotify-knn-history'
 
-const DEFAULT_INPUTS = ['FKA twigs', 'James Blake', 'Sampha']
+const DEFAULT_INPUTS = ['', '', '']
 
 const DISCOVERY_TAGS = [
   'all',
@@ -110,6 +110,24 @@ function formatNumber(value) {
   return Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
 }
 
+const GENRE_OVERRIDES = {
+  'r&b': 'R&B',
+  'k-pop': 'K-Pop',
+  'lo-fi': 'Lo-Fi',
+  edm: 'EDM',
+  uk: 'UK',
+}
+
+function formatGenre(genre) {
+  if (!genre) return ''
+  const lower = genre.toLowerCase().trim()
+  if (GENRE_OVERRIDES[lower]) return GENRE_OVERRIDES[lower]
+  return lower
+    .split(' ')
+    .map((word) => (GENRE_OVERRIDES[word] ? GENRE_OVERRIDES[word] : word.charAt(0).toUpperCase() + word.slice(1)))
+    .join(' ')
+}
+
 function audienceValue(artist) {
   return artist.monthlyListeners || artist.listeners || artist.followers || 0
 }
@@ -128,13 +146,13 @@ function getInitials(name) {
 }
 
 async function discoverSpotifyArtists(seedArtists) {
-  const url = new URL('/api/spotify-discover', window.location.origin)
+  const url = new URL('/api/discover', window.location.origin)
   url.searchParams.set('artists', seedArtists.join(','))
   const response = await fetch(url)
   const data = await response.json()
 
   if (!response.ok) {
-    throw new Error(data.error || 'Spotify discovery failed')
+    throw new Error(data.error || 'Discovery failed')
   }
 
   return data
@@ -162,15 +180,15 @@ function App() {
   const [activePage, setActivePage] = useState('discover')
   const [menuOpen, setMenuOpen] = useState(false)
   const [inputs, setInputs] = useState(DEFAULT_INPUTS)
-  const [results, setResults] = useState(MOCK_ARTISTS)
+  const [results, setResults] = useState([])
   const [history, setHistory] = useState(readHistory)
   const [filters, setFilters] = useState({
     tag: 'all',
     maxFollowers: 1500000,
-    minMatch: 20,
-    mood: 'late',
+    minMatch: 0,
+    mood: 'none',
   })
-  const [selectedArtist, setSelectedArtist] = useState(MOCK_ARTISTS[0])
+  const [selectedArtist, setSelectedArtist] = useState(null)
   const [selectedSession, setSelectedSession] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -285,9 +303,9 @@ function App() {
         >
           <span />
         </button>
-        <div className="top-wordmark brand-label" aria-label="Subsurface Spotify KNN Finder">
+        <div className="top-wordmark brand-label" aria-label="Subsurface Music Discovery">
           <p>SUBSURFACE</p>
-          <span>Spotify KNN Finder</span>
+          <span>Music Discovery</span>
         </div>
       </header>
 
@@ -376,8 +394,8 @@ function DiscoverPage({ inputs, updateInput, findArtists, loading, filters, setF
       <section className="results-panel glass-panel">
         <div className="section-heading">
           <div>
-            <span className="eyebrow">KNN Results</span>
-            <h2>{results.length} Spotify-ranked artists</h2>
+            <span className="eyebrow">Discoveries</span>
+            <h2>{results.length} Hidden Gems Found</h2>
           </div>
           <SlidersHorizontal size={20} />
         </div>
@@ -421,7 +439,7 @@ function FilterPanel({ filters, setFilters }) {
         <input
           type="range"
           min="50000"
-          max="10000000"
+          max="1500000"
           step="50000"
           value={filters.maxFollowers}
           onChange={(event) => setFilters((current) => ({ ...current, maxFollowers: Number(event.target.value) }))}
@@ -429,7 +447,7 @@ function FilterPanel({ filters, setFilters }) {
       </label>
 
       <label className="range-control">
-        <span>Minimum KNN score: {filters.minMatch}</span>
+        <span>Minimum match score: {filters.minMatch}</span>
         <input
           type="range"
           min="1"
@@ -445,6 +463,7 @@ function FilterPanel({ filters, setFilters }) {
           value={filters.mood}
           onChange={(event) => setFilters((current) => ({ ...current, mood: event.target.value }))}
         >
+          <option value="none">No mood filter</option>
           <option value="late">Late-night headphones</option>
           <option value="cinematic">Cinematic study</option>
           <option value="club">Smart club energy</option>
@@ -467,10 +486,10 @@ function ArtistCard({ artist, index, onOpen }) {
           <strong>{artist.score}</strong>
         </div>
         <h3>{artist.name}</h3>
-        <p>{formatNumber(audienceValue(artist))} monthly listeners - popularity {artist.popularity ?? 'scored'}</p>
+        <p>{formatNumber(audienceValue(artist))} listeners</p>
         <div className="mini-tags">
           {artist.tags.slice(0, 3).map((tag) => (
-            <span key={tag}>{tag}</span>
+            <span key={tag}>{formatGenre(tag)}</span>
           ))}
         </div>
         <div className="card-actions">
@@ -513,7 +532,7 @@ function ArtistsPage({ artists, selectedArtist, selectArtist }) {
               {artist.image ? <img src={artist.image} alt={`${artist.name} artist portrait`} /> : <span>{getInitials(artist.name)}</span>}
             </div>
             <div className="profile-copy">
-              <span className="status-pill">KNN score {artist.score} - {artist.cluster}</span>
+              <span className="status-pill">Match {artist.score} - {artist.cluster}</span>
               <h2>{artist.name}</h2>
               <p>{artist.bio}</p>
 
@@ -536,7 +555,7 @@ function ArtistsPage({ artists, selectedArtist, selectArtist }) {
                   <h3>Feature tags</h3>
                   <div className="mini-tags large">
                     {artist.tags.map((tag) => (
-                      <span key={tag}>{tag}</span>
+                      <span key={tag}>{formatGenre(tag)}</span>
                     ))}
                   </div>
                 </div>
@@ -706,7 +725,7 @@ function TastePage({ stats, clusterStats, artists }) {
       </div>
 
       <div className="analytics-grid">
-        <Metric label="Average KNN score" value={avgScore || 'n/a'} />
+        <Metric label="Average match score" value={avgScore || 'n/a'} />
         <Metric label="Avg. monthly listeners" value={formatNumber(avgFollowers)} />
         <Metric label="Avg. popularity" value={avgPopularity || 'scored'} />
       </div>
@@ -715,7 +734,7 @@ function TastePage({ stats, clusterStats, artists }) {
         <h2>Genre gravity</h2>
         {stats.map((item) => (
           <div className="bar-row" key={item.tag}>
-            <span>{item.tag}</span>
+            <span>{formatGenre(item.tag)}</span>
             <div className="bar-track">
               <div style={{ width: `${item.width}%` }} />
             </div>

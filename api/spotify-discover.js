@@ -1,6 +1,33 @@
 let cachedToken = null
 
-const FALLBACK_GENRES = ['alternative r&b', 'indie soul', 'electronic', 'neo soul', 'art pop']
+const FALLBACK_GENRE_POOL = [
+  'alternative r&b', 'indie soul', 'electronic', 'neo soul', 'art pop',
+  'indie rock', 'indie pop', 'dream pop', 'bedroom pop', 'lo-fi',
+  'hip hop', 'trap', 'rap', 'pop rap', 'conscious hip hop',
+  'pop', 'singer-songwriter', 'folk', 'acoustic', 'indie folk',
+  'rock', 'alternative rock', 'post-rock', 'shoegaze', 'grunge',
+  'house', 'techno', 'ambient', 'experimental', 'synth-pop',
+  'jazz', 'soul', 'funk', 'blues', 'classical crossover',
+  'k-pop', 'latin pop', 'reggaeton', 'afrobeats', 'amapiano',
+  'country', 'americana', 'punk', 'metal', 'emo',
+]
+
+// pick a deterministic but varied set of fallback genres based on the seed artist names,
+// so different searches don't all collapse onto the same hardcoded list
+function pickFallbackGenres(seedNames) {
+  const seedString = seedNames.join('|').toLowerCase()
+  let hash = 0
+  for (let i = 0; i < seedString.length; i++) {
+    hash = (hash * 31 + seedString.charCodeAt(i)) >>> 0
+  }
+  const start = hash % FALLBACK_GENRE_POOL.length
+  const picked = []
+  for (let i = 0; i < 5; i++) {
+    picked.push(FALLBACK_GENRE_POOL[(start + i * 7) % FALLBACK_GENRE_POOL.length])
+  }
+  return picked
+}
+
 const KNOWN_ARTIST_IDS = {
   'fka twigs': '6nB0iY1cjSY1KyhYyuIIKH',
   'james blake': '53KwLdlmrlCelAZMaLVZqU',
@@ -264,7 +291,17 @@ export default async function handler(req, res) {
 
   try {
     const token = await getSpotifyToken()
-    const seedArtists = (await Promise.all(seeds.map((name) => getArtistByName(name, token).catch(() => null)))).filter(Boolean)
+    const seedArtistResults = []
+    for (const name of seeds) {
+      try {
+        seedArtistResults.push(await getArtistByName(name, token))
+      } catch (e) {
+        console.error('getArtistByName failed for', name, e)
+        seedArtistResults.push(null)
+      }
+      await new Promise((resolve) => setTimeout(resolve, 150))
+    }
+    const seedArtists = seedArtistResults.filter(Boolean)
     const seedIds = new Set(seedArtists.map((artist) => artist.id))
     const seedNames = new Set(seedArtists.map((artist) => normalizeText(artist.name)))
     const seedGenres = [...new Set(seedArtists.flatMap((artist) => artist.genres || []))]
@@ -298,7 +335,7 @@ export default async function handler(req, res) {
       })
     })
 
-    const genreQueries = (seedGenres.length ? seedGenres : FALLBACK_GENRES).slice(0, 5)
+    const genreQueries = (seedGenres.length ? seedGenres : pickFallbackGenres(seeds)).slice(0, 5)
     const genreResults = await Promise.all(
       genreQueries.map(async (genre) => ({
         genre,
@@ -347,7 +384,7 @@ export default async function handler(req, res) {
       })
     }
 
-    const candidateIds = [...candidateMap.keys()].slice(0, 24)
+    const candidateIds = [...candidateMap.keys()].slice(0, 40)
     if (!candidateIds.length) {
       send(res, 200, { seeds: seedArtists, results: [] })
       return
@@ -388,10 +425,9 @@ export default async function handler(req, res) {
     )
 
     const results = enriched
-      .filter((artist) => artist.monthlyListeners >= 1_000)
       .filter((artist) => !genreQueries.some((genre) => normalizeText(genre) === normalizeText(artist.name)))
       .sort((a, b) => b.score - a.score)
-      .slice(0, 12)
+      .slice(0, 20)
 
     res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=86400')
     send(res, 200, {
