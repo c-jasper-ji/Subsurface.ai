@@ -39,8 +39,10 @@ async function getSpotifyToken() {
 }
 
 async function spotify(path, token, params = {}) {
-  const url = new URL(`https://api.spotify.com/v1${path}`)
-  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value))
+  const query = Object.entries(params)
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&')
+  const url = `https://api.spotify.com/v1${path}${query ? `?${query}` : ''}`
 
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
