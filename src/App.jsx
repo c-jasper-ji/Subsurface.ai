@@ -106,8 +106,12 @@ const PLAYLIST_MOODS = {
 }
 
 function formatNumber(value) {
-  if (!value) return 'unknown'
+  if (!value) return 'signal pending'
   return Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
+}
+
+function audienceValue(artist) {
+  return artist.monthlyListeners || artist.listeners || artist.followers || 0
 }
 
 function makeSpotifySearch(name) {
@@ -176,7 +180,7 @@ function App() {
     const moodTags = PLAYLIST_MOODS[filters.mood] || []
     return results
       .filter((artist) => filters.tag === 'all' || artist.tags.some((tag) => tag.includes(filters.tag)))
-      .filter((artist) => !artist.followers || artist.followers <= filters.maxFollowers)
+      .filter((artist) => !audienceValue(artist) || audienceValue(artist) <= filters.maxFollowers)
       .filter((artist) => artist.score >= filters.minMatch)
       .map((artist) => ({
         ...artist,
@@ -321,7 +325,7 @@ function DiscoverPage({ inputs, updateInput, findArtists, loading, filters, setF
           {seedProfiles.length > 0 && (
             <div className="seed-summary">
               {seedProfiles.slice(0, 3).map((seed) => (
-                <span key={seed.id}>{seed.name}: {formatNumber(seed.followers)} followers</span>
+                <span key={seed.id}>{seed.name}: {formatNumber(seed.monthlyListeners || seed.followers)} monthly listeners</span>
               ))}
             </div>
           )}
@@ -396,7 +400,7 @@ function FilterPanel({ filters, setFilters }) {
       </div>
 
       <label className="range-control">
-        <span>Max Spotify followers: {formatNumber(filters.maxFollowers)}</span>
+        <span>Max monthly listeners: {formatNumber(filters.maxFollowers)}</span>
         <input
           type="range"
           min="50000"
@@ -446,7 +450,7 @@ function ArtistCard({ artist, index, onOpen }) {
           <strong>{artist.score}</strong>
         </div>
         <h3>{artist.name}</h3>
-        <p>{formatNumber(artist.followers)} Spotify followers - popularity {artist.popularity ?? 'n/a'}</p>
+        <p>{formatNumber(audienceValue(artist))} monthly listeners - popularity {artist.popularity ?? 'scored'}</p>
         <div className="mini-tags">
           {artist.tags.slice(0, 3).map((tag) => (
             <span key={tag}>{tag}</span>
@@ -502,8 +506,8 @@ function ArtistsPage({ artists, selectedArtist, selectArtist }) {
             <p>{artist.bio}</p>
 
             <div className="profile-metrics">
-              <Metric label="Spotify followers" value={formatNumber(artist.followers)} />
-              <Metric label="Popularity" value={artist.popularity ?? 'n/a'} />
+              <Metric label="Monthly listeners" value={formatNumber(audienceValue(artist))} />
+              <Metric label="Popularity" value={artist.popularity ?? 'scored'} />
               <Metric label="Similarity" value={`${Math.round((artist.match || 0) * 100)}%`} />
             </div>
 
@@ -613,7 +617,7 @@ function HistoryModal({ session, onClose }) {
               <span>{index + 1}</span>
               <div>
                 <strong>{artist.name}</strong>
-                <p>{formatNumber(artist.followers)} followers - score {artist.score} - {artist.cluster}</p>
+                <p>{formatNumber(audienceValue(artist))} monthly listeners - score {artist.score} - {artist.cluster}</p>
               </div>
               <a href={artist.spotifyUrl || makeSpotifySearch(artist.name)} target="_blank" rel="noreferrer">
                 <ExternalLink size={15} />
@@ -628,7 +632,7 @@ function HistoryModal({ session, onClose }) {
 
 function TastePage({ stats, clusterStats, artists }) {
   const avgScore = Math.round(artists.reduce((sum, artist) => sum + artist.score, 0) / Math.max(artists.length, 1))
-  const avgFollowers = Math.round(artists.reduce((sum, artist) => sum + (artist.followers || 0), 0) / Math.max(artists.length, 1))
+  const avgFollowers = Math.round(artists.reduce((sum, artist) => sum + audienceValue(artist), 0) / Math.max(artists.length, 1))
   const avgPopularity = Math.round(artists.reduce((sum, artist) => sum + (artist.popularity || 0), 0) / Math.max(artists.length, 1))
 
   return (
@@ -642,8 +646,8 @@ function TastePage({ stats, clusterStats, artists }) {
 
       <div className="analytics-grid">
         <Metric label="Average KNN score" value={avgScore || 'n/a'} />
-        <Metric label="Avg. followers" value={formatNumber(avgFollowers)} />
-        <Metric label="Avg. popularity" value={avgPopularity || 'n/a'} />
+        <Metric label="Avg. monthly listeners" value={formatNumber(avgFollowers)} />
+        <Metric label="Avg. popularity" value={avgPopularity || 'scored'} />
       </div>
 
       <div className="chart-panel glass-panel">
@@ -690,7 +694,7 @@ function ReplayPage({ artists, history }) {
         <article className="glass-panel">
           <span>Top neighbor</span>
           <strong>{topArtist?.name || 'Run a search'}</strong>
-          <p>{topArtist ? `${formatNumber(topArtist.followers)} followers - score ${topArtist.score}` : 'No recommendations yet.'}</p>
+          <p>{topArtist ? `${formatNumber(audienceValue(topArtist))} monthly listeners - score ${topArtist.score}` : 'No recommendations yet.'}</p>
         </article>
         <article className="glass-panel">
           <span>Sessions</span>

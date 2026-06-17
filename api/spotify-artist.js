@@ -53,15 +53,52 @@ async function spotify(path, token, params = {}) {
   return response.json()
 }
 
-function normalizeArtist(artist, topTracks = []) {
+function parseCompactNumber(value) {
+  const match = String(value).match(/([\d.]+)\s*([KMB])?/i)
+  if (!match) return 0
+  const number = Number(match[1])
+  const unit = (match[2] || '').toUpperCase()
+  const multiplier = unit === 'B' ? 1_000_000_000 : unit === 'M' ? 1_000_000 : unit === 'K' ? 1_000 : 1
+  return Math.round(number * multiplier)
+}
+
+function estimatePopularity(monthlyListeners) {
+  if (!monthlyListeners) return null
+  return Math.max(1, Math.min(100, Math.round((Math.log10(monthlyListeners + 1) / 8) * 100)))
+}
+
+async function getPublicSpotifyMetrics(artistId) {
+  try {
+    const response = await fetch(`https://open.spotify.com/artist/${artistId}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    })
+    if (!response.ok) return {}
+    const html = await response.text()
+    const description =
+      html.match(/<meta property="og:description" content="([^"]+)"/)?.[1] ||
+      html.match(/<meta name="description" content="([^"]+)"/)?.[1] ||
+      ''
+    const monthlyText = description.match(/([\d.]+\s*[KMB]?)\s+monthly listeners/i)?.[1]
+    const monthlyListeners = monthlyText ? parseCompactNumber(monthlyText) : 0
+    return { monthlyListeners }
+  } catch {
+    return {}
+  }
+}
+
+function normalizeArtist(artist, topTracks = [], publicMetrics = {}) {
+  const monthlyListeners = publicMetrics.monthlyListeners || 0
+  const followers = artist.followers?.total || monthlyListeners || 0
+  const popularity = artist.popularity ?? estimatePopularity(monthlyListeners)
   return {
     id: artist.id,
     name: artist.name,
-    followers: artist.followers?.total ?? 0,
+    monthlyListeners,
+    followers,
     spotifyUrl: artist.external_urls?.spotify || '',
     image: artist.images?.[0]?.url || '',
     spotifyGenres: artist.genres || [],
-    popularity: artist.popularity ?? null,
+    popularity,
     topTracks,
   }
 }
@@ -117,9 +154,12 @@ export default async function handler(req, res) {
       return
     }
 
-    const topTracks = await getTopTracks(artist.id, token)
+    const [topTracks, publicMetrics] = await Promise.all([
+      getTopTracks(artist.id, token),
+      getPublicSpotifyMetrics(artist.id),
+    ])
     res.setHeader('Cache-Control', 's-maxage=86400, stale-while-revalidate=604800')
-    send(res, 200, { artist: normalizeArtist(artist, topTracks) })
+    send(res, 200, { artist: normalizeArtist(artist, topTracks, publicMetrics) })
   } catch (error) {
     send(res, 500, { error: error.message || 'Spotify lookup failed' })
   }

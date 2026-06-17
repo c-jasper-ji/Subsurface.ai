@@ -10,6 +10,20 @@ function normalizeText(value) {
   return value.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim()
 }
 
+function parseCompactNumber(value) {
+  const match = String(value).match(/([\d.]+)\s*([KMB])?/i)
+  if (!match) return 0
+  const number = Number(match[1])
+  const unit = (match[2] || '').toUpperCase()
+  const multiplier = unit === 'B' ? 1_000_000_000 : unit === 'M' ? 1_000_000 : unit === 'K' ? 1_000 : 1
+  return Math.round(number * multiplier)
+}
+
+function estimatePopularity(monthlyListeners) {
+  if (!monthlyListeners) return 50
+  return Math.max(1, Math.min(100, Math.round((Math.log10(monthlyListeners + 1) / 8) * 100)))
+}
+
 async function getSpotifyToken() {
   const clientId = process.env.SPOTIFY_CLIENT_ID
   const clientSecret = process.env.SPOTIFY_CLIENT_SECRET
@@ -76,6 +90,25 @@ async function getArtistById(id, token) {
   }
 }
 
+async function getPublicSpotifyMetrics(artistId) {
+  try {
+    const response = await fetch(`https://open.spotify.com/artist/${artistId}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    })
+    if (!response.ok) return {}
+    const html = await response.text()
+    const description =
+      html.match(/<meta property="og:description" content="([^"]+)"/)?.[1] ||
+      html.match(/<meta name="description" content="([^"]+)"/)?.[1] ||
+      ''
+    const monthlyText = description.match(/([\d.]+\s*[KMB]?)\s+monthly listeners/i)?.[1]
+    const monthlyListeners = monthlyText ? parseCompactNumber(monthlyText) : 0
+    return { monthlyListeners }
+  } catch {
+    return {}
+  }
+}
+
 async function searchArtists(query, token, limit = 8) {
   const data = await spotify('/search', token, {
     q: query,
@@ -116,9 +149,11 @@ function normalizedFollowers(followers, maxFollowers) {
 }
 
 function scoreArtist(candidate, context) {
-  const followersNorm = normalizedFollowers(candidate.followers?.total || 0, context.maxFollowers)
+  const audience = candidate.monthlyListeners || candidate.followers?.total || 0
+  const candidatePopularity = candidate.popularity || estimatePopularity(candidate.monthlyListeners)
+  const followersNorm = normalizedFollowers(audience, context.maxFollowers)
   const noveltyScore = 1 - followersNorm
-  const popularityFit = 1 - Math.abs((candidate.popularity ?? 50) - context.avgPopularity) / 100
+  const popularityFit = 1 - Math.abs(candidatePopularity - context.avgPopularity) / 100
   const genreScore = genreOverlap(candidate.genres || [], context.seedGenres)
   const networkScore = Math.min(1, (candidate.sourceCount || 0) / Math.max(context.seedCount, 1))
   const score = genreScore * 42 + networkScore * 24 + noveltyScore * 20 + popularityFit * 14
@@ -134,12 +169,16 @@ function scoreArtist(candidate, context) {
 
 function toClientArtist(artist, scoreParts, topTracks, sources) {
   const tags = artist.genres?.length ? artist.genres : artist.queryGenres || []
+  const monthlyListeners = artist.monthlyListeners || 0
+  const followers = artist.followers?.total || monthlyListeners || 0
+  const popularity = artist.popularity || estimatePopularity(monthlyListeners)
   return {
     id: artist.id,
     name: artist.name,
-    followers: artist.followers?.total ?? 0,
-    listeners: artist.followers?.total ?? 0,
-    popularity: artist.popularity ?? 0,
+    monthlyListeners,
+    followers,
+    listeners: monthlyListeners || followers,
+    popularity,
     score: scoreParts.score,
     match: scoreParts.match,
     noveltyScore: scoreParts.noveltyScore,
@@ -151,7 +190,7 @@ function toClientArtist(artist, scoreParts, topTracks, sources) {
     topTracks: topTracks.map((track) => track.name).slice(0, 3),
     image: artist.images?.[0]?.url || '',
     spotifyUrl: artist.external_urls?.spotify || '',
-    bio: 'Spotify catalog profile built from artist followers, popularity, genres and top-track network signals.',
+    bio: 'Spotify catalog profile built from Spotify public listener scale, genres and catalog network signals.',
     cluster: inferCluster(tags),
   }
 }
@@ -192,10 +231,16 @@ export default async function handler(req, res) {
     const seedIds = new Set(seedArtists.map((artist) => artist.id))
     const seedNames = new Set(seedArtists.map((artist) => normalizeText(artist.name)))
     const seedGenres = [...new Set(seedArtists.flatMap((artist) => artist.genres || []))]
+    const seedMetrics = await Promise.all(seedArtists.map((artist) => getPublicSpotifyMetrics(artist.id)))
+    const normalizedSeeds = seedArtists.map((artist, index) => ({
+      ...artist,
+      monthlyListeners: seedMetrics[index]?.monthlyListeners || 0,
+      popularity: artist.popularity || estimatePopularity(seedMetrics[index]?.monthlyListeners || 0),
+    }))
     const avgPopularity =
-      seedArtists.reduce((sum, artist) => sum + (artist.popularity ?? 50), 0) / Math.max(seedArtists.length, 1)
+      normalizedSeeds.reduce((sum, artist) => sum + (artist.popularity ?? 50), 0) / Math.max(normalizedSeeds.length, 1)
 
-    const seedTracks = await Promise.all(seedArtists.map((artist) => getTopTracks(artist.id, token)))
+    const seedTracks = await Promise.all(normalizedSeeds.map((artist) => getTopTracks(artist.id, token)))
     const candidateMap = new Map()
 
     seedTracks.forEach((tracks, index) => {
@@ -209,7 +254,7 @@ export default async function handler(req, res) {
             sources: new Set(),
             sourceCount: 0,
           }
-          existing.sources.add(seedArtists[index].name)
+          existing.sources.add(normalizedSeeds[index].name)
           existing.sourceCount = existing.sources.size
           candidateMap.set(artist.id, existing)
         })
@@ -247,7 +292,7 @@ export default async function handler(req, res) {
       })
     })
 
-    const candidateIds = [...candidateMap.keys()].slice(0, 40)
+    const candidateIds = [...candidateMap.keys()].slice(0, 24)
     if (!candidateIds.length) {
       send(res, 200, { seeds: seedArtists, results: [] })
       return
@@ -266,11 +311,17 @@ export default async function handler(req, res) {
       )
     ).filter(Boolean)
 
-    const maxFollowers = Math.max(...artistDetails.map((artist) => artist.followers?.total || 0), 1)
+    const publicMetrics = await Promise.all(artistDetails.map((artist) => getPublicSpotifyMetrics(artist.id)))
+    const metricArtists = artistDetails.map((artist, index) => ({
+      ...artist,
+      monthlyListeners: publicMetrics[index]?.monthlyListeners || 0,
+      popularity: artist.popularity || estimatePopularity(publicMetrics[index]?.monthlyListeners || 0),
+    }))
+    const maxFollowers = Math.max(...metricArtists.map((artist) => artist.monthlyListeners || artist.followers?.total || 0), 1)
     const context = { seedGenres: genreQueries, avgPopularity, maxFollowers, seedCount: seedArtists.length }
 
     const enriched = await Promise.all(
-      artistDetails
+      metricArtists
         .filter(Boolean)
         .map(async (artist) => {
           const meta = candidateMap.get(artist.id)
@@ -290,8 +341,9 @@ export default async function handler(req, res) {
       seeds: seedArtists.map((artist) => ({
         id: artist.id,
         name: artist.name,
-        followers: artist.followers?.total || 0,
-        popularity: artist.popularity ?? 0,
+        monthlyListeners: artist.monthlyListeners || 0,
+        followers: artist.followers?.total || artist.monthlyListeners || 0,
+        popularity: artist.popularity || estimatePopularity(artist.monthlyListeners || 0),
         genres: artist.genres || [],
         image: artist.images?.[0]?.url || '',
         spotifyUrl: artist.external_urls?.spotify || '',
