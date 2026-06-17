@@ -110,12 +110,16 @@ async function getPublicSpotifyMetrics(artistId) {
 }
 
 async function searchArtists(query, token, limit = 8) {
-  const data = await spotify('/search', token, {
-    q: query,
-    type: 'artist',
-    limit: String(limit),
-  })
-  return data.artists?.items || []
+  try {
+    const data = await spotify('/search', token, {
+      q: query,
+      type: 'artist',
+      limit: String(limit),
+    })
+    return data.artists?.items || []
+  } catch {
+    return []
+  }
 }
 
 async function getTopTracks(artistId, token) {
