@@ -275,7 +275,9 @@ export default async function handler(req, res) {
 
   try {
     const token = await getSpotifyToken()
-    const seedArtists = (await Promise.all(seeds.map((name) => getArtistByName(name, token)))).filter(Boolean)
+    const seedArtists = (
+      await Promise.all(seeds.map((name) => getArtistByName(name, token).catch(() => null)))
+    ).filter(Boolean)
     const seedIds = new Set(seedArtists.map((artist) => artist.id))
     const seedNames = new Set(seedArtists.map((artist) => normalizeText(artist.name)))
     const seedGenres = [...new Set(seedArtists.flatMap((artist) => artist.genres || []))]
@@ -334,7 +336,7 @@ export default async function handler(req, res) {
       })
     })
 
-    const candidateIds = [...candidateMap.keys()].slice(0, 40)
+    const candidateIds = [...candidateMap.keys()].slice(0, 24)
     if (!candidateIds.length) {
       send(res, 200, { seeds: seedArtists, results: [] })
       return
@@ -382,7 +384,7 @@ export default async function handler(req, res) {
 
     res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=600')
     send(res, 200, {
-      seeds: seedArtists.map((artist) => ({
+      seeds: normalizedSeeds.map((artist) => ({
         id: artist.id,
         name: artist.name,
         monthlyListeners: artist.monthlyListeners || 0,
