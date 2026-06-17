@@ -133,6 +133,7 @@ function scoreArtist(candidate, context) {
 }
 
 function toClientArtist(artist, scoreParts, topTracks, sources) {
+  const tags = artist.genres?.length ? artist.genres : artist.queryGenres || []
   return {
     id: artist.id,
     name: artist.name,
@@ -146,12 +147,12 @@ function toClientArtist(artist, scoreParts, topTracks, sources) {
     popularityFit: scoreParts.popularityFit,
     sources,
     sourceCount: sources.length,
-    tags: artist.genres || [],
+    tags,
     topTracks: topTracks.map((track) => track.name).slice(0, 3),
     image: artist.images?.[0]?.url || '',
     spotifyUrl: artist.external_urls?.spotify || '',
     bio: 'Spotify catalog profile built from artist followers, popularity, genres and top-track network signals.',
-    cluster: inferCluster(artist.genres || []),
+    cluster: inferCluster(tags),
   }
 }
 
@@ -217,24 +218,33 @@ export default async function handler(req, res) {
 
     const genreQueries = (seedGenres.length ? seedGenres : FALLBACK_GENRES).slice(0, 5)
     const genreResults = await Promise.all(
-      genreQueries.flatMap((genre) => [
-        searchArtists(`genre:"${genre}"`, token, 8),
-        searchArtists(genre, token, 5),
-      ])
+      genreQueries.map(async (genre) => ({
+        genre,
+        artists: [
+          ...(await searchArtists(`genre:"${genre}"`, token, 8)),
+          ...(await searchArtists(genre, token, 5)),
+        ],
+      }))
     )
-    genreResults.flat().forEach((artist) => {
-      if (seedIds.has(artist.id) || seedNames.has(normalizeText(artist.name))) return
-      const existing = candidateMap.get(artist.id) || {
-        id: artist.id,
-        name: artist.name,
-        artist,
-        sources: new Set(),
-        sourceCount: 0,
-      }
-      existing.artist = existing.artist || artist
-      existing.sources.add('genre match')
-      existing.sourceCount = existing.sources.size
-      candidateMap.set(artist.id, existing)
+
+    genreResults.forEach(({ genre, artists }) => {
+      artists.forEach((artist) => {
+        if (seedIds.has(artist.id) || seedNames.has(normalizeText(artist.name))) return
+        const existing = candidateMap.get(artist.id) || {
+          id: artist.id,
+          name: artist.name,
+          artist,
+          queryGenres: new Set(),
+          sources: new Set(),
+          sourceCount: 0,
+        }
+        existing.artist = existing.artist || artist
+        existing.queryGenres = existing.queryGenres || new Set()
+        existing.queryGenres.add(genre)
+        existing.sources.add('genre match')
+        existing.sourceCount = existing.sources.size
+        candidateMap.set(artist.id, existing)
+      })
     })
 
     const candidateIds = [...candidateMap.keys()].slice(0, 40)
@@ -247,30 +257,31 @@ export default async function handler(req, res) {
       await Promise.all(
         candidateIds.map(async (id) => {
           const meta = candidateMap.get(id)
-          if (meta?.artist) return meta.artist
+          if (meta?.artist) return { ...meta.artist, queryGenres: [...(meta.queryGenres || [])] }
           const byId = await getArtistById(id, token)
-          if (byId) return byId
-          return meta?.name ? getArtistByName(meta.name, token) : null
+          if (byId) return { ...byId, queryGenres: [...(meta?.queryGenres || [])] }
+          const byName = meta?.name ? await getArtistByName(meta.name, token) : null
+          return byName ? { ...byName, queryGenres: [...(meta?.queryGenres || [])] } : null
         })
       )
     ).filter(Boolean)
 
     const maxFollowers = Math.max(...artistDetails.map((artist) => artist.followers?.total || 0), 1)
-    const context = { seedGenres, avgPopularity, maxFollowers, seedCount: seedArtists.length }
+    const context = { seedGenres: genreQueries, avgPopularity, maxFollowers, seedCount: seedArtists.length }
 
     const enriched = await Promise.all(
       artistDetails
         .filter(Boolean)
         .map(async (artist) => {
           const meta = candidateMap.get(artist.id)
-          const scoreParts = scoreArtist({ ...artist, sourceCount: meta?.sourceCount || 0 }, context)
+          const tags = artist.genres?.length ? artist.genres : artist.queryGenres || []
+          const scoreParts = scoreArtist({ ...artist, genres: tags, sourceCount: meta?.sourceCount || 0 }, context)
           const topTracks = await getTopTracks(artist.id, token)
           return toClientArtist(artist, scoreParts, topTracks, [...(meta?.sources || [])])
         })
     )
 
     const results = enriched
-      .filter((artist) => artist.followers > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, 12)
 
