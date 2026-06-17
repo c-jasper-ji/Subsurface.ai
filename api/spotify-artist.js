@@ -49,7 +49,8 @@ async function spotify(path, token, params = {}) {
   })
 
   if (!response.ok) {
-    throw new Error(`Spotify request failed: ${path}`)
+    const detail = await response.text().catch(() => '')
+    throw new Error(`Spotify request failed: ${path} (${response.status}) ${detail.slice(0, 120)}`)
   }
 
   return response.json()
