@@ -360,7 +360,6 @@ function DiscoverPage({ inputs, updateInput, findArtists, loading, filters, setF
     <section className="page-grid discover-grid">
       <div className="hero-panel immersive-panel">
         <div className="hero-copy">
-          <span className="status-pill">Spotify catalog model</span>
           <h1>Find the artists Spotify keeps just below the surface.</h1>
           <p>
             Enter three names. Subsurface compares listener scale, popularity, genres and track networks, then returns a

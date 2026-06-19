@@ -445,6 +445,7 @@ a {
 .hero-copy h1 {
   max-width: 760px;
   font-size: clamp(36px, 5vw, 60px);
+  margin-top: 0;
 }
 
 .hero-copy p,
