@@ -304,7 +304,9 @@ function App() {
           <span />
         </button>
         <div className="top-wordmark brand-label" aria-label="Subsurface Music Discovery">
-          <img src="/logo.png" alt="Subsurface" className="brand-logo" />
+          <div className="brand-logo-wrap">
+            <img src="/logo.png" alt="Subsurface" className="brand-logo" />
+          </div>
           <span>Music Discovery</span>
         </div>
       </header>

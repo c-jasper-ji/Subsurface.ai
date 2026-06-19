@@ -162,8 +162,8 @@ a {
   align-items: center;
   text-align: center;
   pointer-events: auto;
-  padding: 9px 18px 8px;
-  gap: 2px;
+  padding: 14px 28px 10px;
+  gap: 4px;
   min-width: 210px;
   border: 1px solid rgba(226, 236, 255, 0.14);
   border-radius: 999px;
@@ -172,10 +172,15 @@ a {
   backdrop-filter: blur(18px) saturate(1.2);
 }
 
+.brand-logo-wrap {
+  display: inline-flex;
+}
+
 .brand-logo {
-  height: 22px;
+  height: 30px;
   width: auto;
   object-fit: contain;
+  filter: brightness(0.88) contrast(1.05);
 }
 
 .top-wordmark p,
