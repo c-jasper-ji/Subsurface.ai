@@ -17,10 +17,12 @@ The recommendation engine runs on **Last.fm**, which computes real listening-bas
 3. Filter out:
    - The artists the user already typed (handles spelling/punctuation differences)
    - Combined/collab artist names (e.g. "Jay-Z & Kanye", "Drake x Future")
-4. Score each candidate with a **niche score**: artists that appear in only 1–2 of the 3 similar-artist lists score higher than artists appearing in all 3 — because showing up everywhere means they're likely too mainstream
-5. Filter by Last.fm listener count (under 1.5M) as a secondary mainstream check
+4. Calculate four inspectable signals: **relevance** (52%), **discovery fit** (22%), **cross-seed consensus** (18%), and **metadata confidence** (8%)
+5. Filter by Last.fm listener count (under 1.5M), then apply a cluster-diversity pass so one sound does not dominate the set
 6. Enrich the top 20 results with Spotify artist photos and profile links
-7. Display results ranked by niche score, with genre tags and top 3 tracks per artist
+7. Display a recommendation reason and the four component scores for every artist
+
+Cross-seed overlap is now treated as positive preference evidence rather than a proxy for mainstream popularity. Listener scale supplies the discovery component separately, which makes the ranking easier to explain and less internally contradictory.
 
 ### Why not use Spotify for recommendations?
 
@@ -30,12 +32,13 @@ We tried. Spotify's `related-artists` and `recommendations` endpoints were both 
 
 ## Features
 
-- Discover page — three seed artist inputs, recommendation results as cards
-- Filter stack — genre, max monthly listeners, minimum match score, mood target
-- Artist detail view — photo, listener count, genre tags, top 3 tracks, Spotify link
-- Search history — past searches saved locally, click to reopen
-- Taste Lab — genre breakdown and cluster summary of your results
-- Frosted dark interface with smooth transitions
+- One continuous four-part journey: home, discover, results, and library
+- Persistent section navigation with smooth transitions and responsive mobile navigation
+- Dynamic grayscale artist masonry sourced from the latest search results
+- Search-to-results auto transition and an evidence-led artist detail panel
+- Filters for genre, Last.fm listeners, and minimum fit score
+- Local search history, taste signal, and next queue in one consolidated library
+- White editorial system with a moving line asset and restrained violet-silver glass layers
 
 ---
 
@@ -54,7 +57,7 @@ Subsurface.ai/
 ├── index.html
 ├── vite.config.js
 ├── vercel.json
-└── .env                      # API keys (never commit this)
+└── .env                      # API keys (local only; ignored by Git)
 ```
 
 ---
@@ -111,7 +114,7 @@ If the deployed link asks visitors to log in to Vercel, go to **Settings → Dep
 
 ## Known Limitations
 
-- **Regional bias:** Last.fm's user base skews Western, so listener counts for non-Western artists (e.g. Bollywood) can appear artificially low. The niche score (cross-list appearance) is less affected by this than a fixed listener threshold, but it's not a complete fix.
+- **Regional bias:** Last.fm's user base skews Western, so listener counts for non-Western artists (e.g. Bollywood) can appear artificially low. The multi-signal score reduces reliance on a single threshold, but it does not remove the underlying coverage bias.
 - **Spotify token/rate limits:** Spotify's free-tier API has request rate limits. If photos/links stop appearing, the app still works — it just falls back to a placeholder icon and a Spotify search link instead of a direct profile link.
 - **No genre filter ground truth:** genre tags come from Last.fm's user-submitted tags, which can be inconsistent in quality across artists.
 
@@ -119,5 +122,5 @@ If the deployed link asks visitors to log in to Vercel, go to **Settings → Dep
 
 - Recommendation reason per card (e.g. "Similar to Taylor Swift")
 - Spotify refresh tokens so artist photo lookups don't degrade after ~1 hour
-- A visual explainer of how the algorithm works
+- Tune ranking weights with lightweight user feedback data
 - Better regional/non-Western music support via an additional data source

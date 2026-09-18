@@ -1,146 +1,85 @@
-# Subsurface Model Explanation
+# Subsurface Model 02
 
-## 1. Product Goal
+## Product objective
 
-Subsurface recommends artists that are close to a user's existing taste but not necessarily the most obvious mainstream choices. The user enters seed artists, and the model returns a ranked list of Spotify artists with profile images, follower counts, popularity, genres, top tracks and Spotify links.
+Subsurface recommends artists who are recognisably connected to a user's taste while still creating discovery. The output is not presented as an objective measure of taste: it is an inspectable ranking whose components are shown in the product.
 
-## 2. Data Source
+## Data sources
 
-The system uses the Spotify Web API. The official artist object provides:
+- **Last.fm similarity:** candidate generation and relevance.
+- **Last.fm artist data:** listener count, community tags and top tracks.
+- **Spotify:** artist images and profile links only.
 
-- Artist name and Spotify ID.
-- `followers.total`.
-- `popularity`, from 0 to 100.
-- Genres.
-- Artist images.
-- Spotify profile URL.
-- Top tracks and the artists credited on those tracks.
+The UI labels Last.fm listeners as Last.fm listeners. It does not describe this value as Spotify monthly listeners or followers.
 
-Spotify's official Web API does not expose artist monthly listeners. For this reason, the model uses `followers.total` and `popularity` as official Spotify scale indicators.
+## Candidate generation
 
-## 3. Course Alignment
+1. Accept one to three seed artists.
+2. Request up to 50 listening-led similar artists for each seed.
+3. Merge and deduplicate candidates.
+4. Exclude the seed artists and obvious combined/collaboration names.
+5. Enrich the strongest 30 candidates with artist metadata.
+6. Exclude records with no audience data and artists above the 1.5 million Last.fm-listener discovery ceiling.
 
-The model is designed around the course topics that best match a music recommendation product:
+## Ranking signals
 
-- Data Preprocessing.
-- Nearest Neighbors.
-- Clustering.
-- Model Evaluation.
+Each remaining artist receives four values on a 0–1 scale.
 
-Linear models are not used as the main approach because the app does not have a labelled target variable such as "user liked this artist". Decision trees are possible as an explanation layer, but the core user task is similarity search. Neural networks and reinforcement learning would be heavier than the available data supports.
+### Relevance — 52%
 
-## 4. Data Preprocessing
+Relevance combines the candidate's maximum seed similarity with its average similarity across every seed list in which it appears:
 
-The Spotify features have different formats and scales, so preprocessing is required before comparing artists.
+~~~text
+relevance = 0.72 × maximum_match + 0.28 × average_match
+~~~
 
-### Missing Values
+### Discovery fit — 22%
 
-Some artists may have no genres, no image or low metadata coverage. The app keeps the artist but uses safe defaults:
+Listener counts are log-normalised between a reliability floor of 10,000 and the 1.5 million ceiling. Lower scale receives a higher discovery value without allowing audience size to replace relevance.
 
-- Missing genres become an empty list.
-- Missing follower counts become 0.
-- Missing popularity is treated as neutral.
-- Missing images fall back to initials.
+### Cross-seed consensus — 18%
 
-### Categorical Variables
+~~~text
+consensus = number_of_seed_lists_containing_candidate / number_of_seeds
+~~~
 
-Genres are categorical multi-label variables. The model treats genres as a multi-hot feature space. For example:
+Appearing near multiple seeds is positive evidence of coherent taste overlap. The previous model treated that overlap as a mainstream penalty; Model 02 separates consensus from audience scale.
 
-```text
-artist_genres = ["alternative r&b", "electronic", "art pop"]
-```
+### Metadata confidence — 8%
 
-This becomes a set of genre tokens used for overlap and distance calculations.
+Confidence records whether listener counts, genre tags and top tracks are available. It prevents incomplete records from receiving an equally confident presentation.
 
-### Standardization
+### Overall score
 
-Follower counts can range from thousands to hundreds of millions. To avoid follower scale dominating all other variables, the model uses log normalization:
-
-```text
-normalized_followers = log10(followers + 1) / log10(max_followers + 1)
-```
-
-Popularity is already on a 0 to 100 scale.
-
-## 5. K-Nearest Neighbors Logic
-
-The core model is a KNN-style content-based recommender. Instead of training a model with labels, it builds a vector-like profile for each candidate artist and ranks candidates by distance to the seed artists.
-
-### Candidate Sources
-
-The system collects candidates from:
-
-1. Artists credited on seed artists' top tracks.
-2. Artists found through Spotify genre searches based on seed genres.
-
-This keeps the system Spotify-native while avoiding deprecated recommendation endpoints.
-
-### Similarity Signals
-
-Each candidate receives four main signals:
-
-```text
-genre_score
-network_score
-novelty_score
-popularity_fit
-```
-
-- `genre_score`: overlap between candidate genres and seed artist genres.
-- `network_score`: how often the candidate appears through seed top-track networks.
-- `novelty_score`: rewards lower follower counts after log normalization.
-- `popularity_fit`: rewards candidates whose popularity is close to the seed artists' average popularity.
-
-### Recommendation Score
-
-The current score is:
-
-```text
+~~~text
 score =
-  42 * genre_score
-+ 24 * network_score
-+ 20 * novelty_score
-+ 14 * popularity_fit
-```
+  0.52 × relevance
++ 0.22 × discovery_fit
++ 0.18 × cross_seed_consensus
++ 0.08 × metadata_confidence
+~~~
 
-The output is clipped to a 1 to 99 range for readability in the UI.
+The UI converts this value to a 1–99 fit score and exposes every component separately.
 
-## 6. Clustering Layer
+## Diversity re-ranking
 
-The app also assigns each recommendation to a lightweight taste cluster. This is inspired by the course clustering material and helps the user understand the recommendation set at a glance.
+Candidates are assigned to lightweight, human-readable clusters such as Alt R&B / Soul, Electronic Edge, Indie Pop Signal and Rap Adjacent. A small penalty is applied each time a cluster is already represented in the selected set. This re-ranking avoids a top-20 list that is numerically relevant but sonically repetitive.
 
-Current clusters include:
+## Evaluation plan
 
-- Alt R&B / Soul.
-- Electronic Edge.
-- Indie Pop Signal.
-- Rap Adjacent.
-- Discovery Cluster.
+Without explicit save/skip feedback, the product can monitor:
 
-This clustering layer is used in Taste Lab and Replay 26' to show the user's discovery identity.
+- result coverage and metadata completeness;
+- median Last.fm listener count;
+- unique cluster and genre count;
+- cross-seed consensus distribution;
+- click-through to artist detail and Spotify.
 
-## 7. Evaluation Approach
+Once users can save or skip results, offline weight tuning and precision-at-k can replace hand-set weights. Until then, the visible weights and recommendation reasons keep the decision process auditable.
 
-Because the app does not yet collect explicit user feedback, classic supervised accuracy is not available. The first evaluation layer should focus on:
+## Known limitations
 
-- Metadata coverage: percentage of recommendations with image, genres and top tracks.
-- Diversity: number of unique clusters and genres.
-- Novelty: median follower count of recommended artists.
-- Relevance proxy: genre overlap and top-track network overlap.
-
-If future users can save, skip or like recommendations, the app can add classification-style metrics from the course:
-
-- Precision: how many recommended artists are saved.
-- Recall: how many relevant artists the app surfaces.
-- F1 score: balance between precision and recall.
-
-## 8. Business Interpretation
-
-This model is explainable enough for a product demo:
-
-- It shows which Spotify variables are used.
-- It avoids a black-box neural model.
-- It connects directly to course concepts.
-- It produces user-facing pages: Discover, Artist Profiles, History, Taste Lab and Replay.
-
-The model is therefore suitable for an MBA Big Data, AI and Machine Learning project because it links practical product design with preprocessing, distance-based recommendation and clustering.
+- Last.fm coverage varies by market and can under-represent non-Western listening.
+- Community tags are noisy and sometimes inconsistent.
+- The cluster layer is rule-based rather than learned from user outcomes.
+- Spotify enrichment can degrade under rate limits without changing the underlying Last.fm ranking.

@@ -97,6 +97,73 @@ function inferCluster(genres) {
   return 'Discovery Cluster'
 }
 
+function clamp(value, min = 0, max = 1) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function scoreCandidate(candidate, seedCount) {
+  const matchValues = [...candidate.matches.values()]
+  const averageMatch = matchValues.reduce((sum, value) => sum + value, 0) / Math.max(matchValues.length, 1)
+  const relevance = clamp(candidate.maxMatch * 0.72 + averageMatch * 0.28)
+  const consensus = clamp(candidate.appearsIn.size / Math.max(seedCount, 1))
+
+  const minReliableListeners = 10_000
+  const listenerCeiling = 1_500_000
+  const listenerPosition = clamp(
+    (Math.log10(candidate.listeners + 1) - Math.log10(minReliableListeners)) /
+      (Math.log10(listenerCeiling) - Math.log10(minReliableListeners))
+  )
+  const discovery = 1 - listenerPosition * 0.75
+
+  const metadataSignals = [
+    candidate.listeners > 0,
+    candidate.genres?.length > 0,
+    candidate.topTracks?.length > 0,
+  ]
+  const confidence = metadataSignals.filter(Boolean).length / metadataSignals.length
+  const rawScore = relevance * 0.52 + discovery * 0.22 + consensus * 0.18 + confidence * 0.08
+
+  return {
+    ...candidate,
+    relevance,
+    consensus,
+    discovery,
+    confidence,
+    rawScore,
+    cluster: inferCluster(candidate.genres || []),
+  }
+}
+
+function diversityRerank(candidates, limit = 20) {
+  const pool = [...candidates]
+  const selected = []
+  const clusterCounts = new Map()
+
+  while (pool.length && selected.length < limit) {
+    pool.sort((a, b) => {
+      const aPenalty = (clusterCounts.get(a.cluster) || 0) * 0.045
+      const bPenalty = (clusterCounts.get(b.cluster) || 0) * 0.045
+      return b.rawScore - bPenalty - (a.rawScore - aPenalty)
+    })
+    const next = pool.shift()
+    selected.push(next)
+    clusterCounts.set(next.cluster, (clusterCounts.get(next.cluster) || 0) + 1)
+  }
+
+  return selected
+}
+
+function buildReason(candidate, seeds) {
+  const sourceNames = [...candidate.appearsIn].map((index) => seeds[index]).filter(Boolean)
+  if (sourceNames.length > 1) {
+    return 'Connects ' + sourceNames.slice(0, 2).join(' and ') + ' with ' + Math.round(candidate.discovery * 100) + ' discovery fit.'
+  }
+  if (candidate.discovery >= 0.72) {
+    return 'A lower-scale neighbor to ' + (sourceNames[0] || 'your seeds') + ' with a strong relevance signal.'
+  }
+  return 'A reliable bridge from ' + (sourceNames[0] || 'your seeds') + ' into ' + candidate.cluster + '.'
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
@@ -135,10 +202,11 @@ export default async function handler(req, res) {
         const key = artist.name.toLowerCase()
         const match = parseFloat(artist.match)
         if (!seenMap.has(key)) {
-          seenMap.set(key, { name: artist.name, match, appearsIn: new Set() })
+          seenMap.set(key, { name: artist.name, maxMatch: match, matches: new Map(), appearsIn: new Set() })
         }
         const entry = seenMap.get(key)
-        if (match > entry.match) entry.match = match
+        if (match > entry.maxMatch) entry.maxMatch = match
+        entry.matches.set(inputIndex, match)
         entry.appearsIn.add(inputIndex)
       }
     })
@@ -149,24 +217,26 @@ export default async function handler(req, res) {
       .filter((a) => !isInputArtist(a.name, normalizedInputs) && !isCombined(a.name))
       .map((a) => ({
         ...a,
-        nicheScore: a.match * (1 - (a.appearsIn.size - 1) / seeds.length),
+        preliminaryScore: a.maxMatch * 0.8 + (a.appearsIn.size / seeds.length) * 0.2,
       }))
-      .sort((a, b) => b.nicheScore - a.nicheScore)
-      .slice(0, 24)
+      .sort((a, b) => b.preliminaryScore - a.preliminaryScore)
+      .slice(0, 30)
 
     const withInfo = await Promise.all(
       candidates.map(async (a) => ({ ...a, ...(await lastfmGetArtistInfo(a.name)) }))
     )
 
-    const filtered = withInfo
+    const scored = withInfo
       .filter((a) => a.listeners > 0 && a.listeners < 1_500_000)
-      .slice(0, 20)
+      .map((candidate) => scoreCandidate(candidate, seeds.length))
+
+    const reranked = diversityRerank(scored, 20)
 
     const spotifyToken = await getSpotifyToken()
     const enriched = await Promise.all(
-      filtered.map(async (a) => {
+      reranked.map(async (a) => {
         const spotifyData = await searchSpotifyArtist(a.name, spotifyToken)
-        const score = Math.round(Math.min(99, Math.max(1, a.nicheScore * 100)))
+        const score = Math.round(Math.min(99, Math.max(1, a.rawScore * 100)))
         return {
           id: a.name,
           name: a.name,
@@ -174,14 +244,18 @@ export default async function handler(req, res) {
           spotifyUrl: spotifyData?.url || '',
           tags: a.genres?.length ? a.genres : ['discovery'],
           topTracks: a.topTracks || [],
-          monthlyListeners: a.listeners,
           listeners: a.listeners,
-          followers: a.listeners,
-          popularity: score,
           score,
-          match: Math.max(0.1, Math.min(0.99, a.nicheScore)),
-          cluster: inferCluster(a.genres || []),
+          match: a.relevance,
+          cluster: a.cluster,
           sources: [...a.appearsIn].map((i) => seeds[i]),
+          reason: buildReason(a, seeds),
+          signals: {
+            relevance: Math.round(a.relevance * 100),
+            discovery: Math.round(a.discovery * 100),
+            consensus: Math.round(a.consensus * 100),
+            confidence: Math.round(a.confidence * 100),
+          },
         }
       })
     )
@@ -189,10 +263,13 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=3600')
     send(res, 200, {
       seeds: seedFound.map((name) => ({ name })),
-      results: enriched.sort((a, b) => b.score - a.score),
+      results: enriched,
       model: {
-        type: 'Last.fm similarity + niche scoring',
-        variables: ['artist similarity match', 'cross-list appearance', 'Last.fm listener count'],
+        type: 'Transparent multi-signal discovery ranking',
+        version: '2.0',
+        variables: ['Last.fm relevance', 'cross-seed consensus', 'listener-scale discovery fit', 'metadata confidence'],
+        weights: { relevance: 0.52, discovery: 0.22, consensus: 0.18, confidence: 0.08 },
+        reranking: 'cluster diversity penalty',
       },
     })
   } catch (error) {
