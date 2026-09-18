@@ -2,7 +2,7 @@
 
 Subsurface is a music discovery app. Enter three artists you already love, and it recommends niche, under-the-radar artists you probably haven't heard yet — filtering out the mainstream names that typically dominate recommendation algorithms.
 
-**Live app:** https://subsurface-ai-psi.vercel.app
+**Live app:** https://subsurface-ai.vercel.app
 
 ---
 
