@@ -215,18 +215,17 @@ function App() {
   const [filters, setFilters] = useState({ tag: 'all', maxListeners: 1500000, minScore: 0 })
 
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)
-        if (visible[0]) setActiveSection(visible[0].target.id)
-      },
-      { rootMargin: '-18% 0px -55%', threshold: [0.1, 0.35, 0.6] }
-    )
-    NAV_ITEMS.forEach((item) => {
-      const section = document.getElementById(item.id)
-      if (section) observer.observe(section)
-    })
-    return () => observer.disconnect()
+    const updateActiveSection = () => {
+      const marker = window.scrollY + window.innerHeight * 0.32
+      const current = NAV_ITEMS.reduce((active, item) => {
+        const section = document.getElementById(item.id)
+        return section && section.offsetTop <= marker ? item.id : active
+      }, 'home')
+      setActiveSection(current)
+    }
+    window.addEventListener('scroll', updateActiveSection, { passive: true })
+    updateActiveSection()
+    return () => window.removeEventListener('scroll', updateActiveSection)
   }, [])
 
   useEffect(() => {
