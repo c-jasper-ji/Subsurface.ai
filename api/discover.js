@@ -164,6 +164,71 @@ function buildReason(candidate, seeds) {
   return 'A reliable bridge from ' + (sourceNames[0] || 'your seeds') + ' into ' + candidate.cluster + '.'
 }
 
+async function getLegacyDiscovery(seeds) {
+  const url = new URL('https://subsurface-ai-psi.vercel.app/api/discover')
+  url.searchParams.set('artists', seeds.join(','))
+  const response = await fetch(url)
+  if (!response.ok) throw new Error('Legacy discovery source is unavailable')
+  const data = await response.json()
+
+  const rescored = (data.results || []).map((artist) => {
+    const sourceCount = Math.max(1, artist.sources?.length || 1)
+    const oldConsensusPenalty = Math.max(0.34, 1 - (sourceCount - 1) / Math.max(seeds.length, 1))
+    const relevance = clamp((artist.match || artist.score / 100 || 0) / oldConsensusPenalty)
+    const consensus = clamp(sourceCount / Math.max(seeds.length, 1))
+    const minReliableListeners = 10_000
+    const listenerCeiling = 1_500_000
+    const listenerPosition = clamp(
+      (Math.log10((artist.listeners || 0) + 1) - Math.log10(minReliableListeners)) /
+        (Math.log10(listenerCeiling) - Math.log10(minReliableListeners))
+    )
+    const discovery = 1 - listenerPosition * 0.75
+    const confidenceSignals = [
+      (artist.listeners || 0) > 0,
+      artist.tags?.length > 0,
+      artist.topTracks?.length > 0,
+    ]
+    const confidence = confidenceSignals.filter(Boolean).length / confidenceSignals.length
+    const rawScore = relevance * 0.52 + discovery * 0.22 + consensus * 0.18 + confidence * 0.08
+    const sourceNames = (artist.sources || []).slice(0, 2)
+    const reason = sourceNames.length > 1
+      ? 'Connects ' + sourceNames.join(' and ') + ' with ' + Math.round(discovery * 100) + ' discovery fit.'
+      : 'A ' + (discovery >= 0.72 ? 'lower-scale neighbor' : 'reliable bridge') + ' from ' + (sourceNames[0] || 'your seeds') + '.'
+
+    return {
+      ...artist,
+      match: relevance,
+      score: Math.round(clamp(rawScore) * 99),
+      reason,
+      rawScore,
+      cluster: artist.cluster || inferCluster(artist.tags || []),
+      signals: {
+        relevance: Math.round(relevance * 100),
+        discovery: Math.round(discovery * 100),
+        consensus: Math.round(consensus * 100),
+        confidence: Math.round(confidence * 100),
+      },
+    }
+  })
+
+  return {
+    seeds: data.seeds || seeds.map((name) => ({ name })),
+    results: diversityRerank(rescored, 20).map((artist) => {
+      const publicArtist = { ...artist }
+      delete publicArtist.rawScore
+      return publicArtist
+    }),
+    model: {
+      type: 'Transparent multi-signal discovery ranking',
+      version: '2.0',
+      variables: ['Last.fm relevance', 'cross-seed consensus', 'listener-scale discovery fit', 'metadata confidence'],
+      weights: { relevance: 0.52, discovery: 0.22, consensus: 0.18, confidence: 0.08 },
+      reranking: 'cluster diversity penalty',
+      dataRoute: 'secured legacy Last.fm endpoint',
+    },
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
@@ -185,7 +250,13 @@ export default async function handler(req, res) {
     return
   }
   if (!LASTFM_KEY) {
-    send(res, 500, { error: 'Missing LASTFM_KEY server environment variable' })
+    try {
+      const fallback = await getLegacyDiscovery(seeds)
+      res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=3600')
+      send(res, 200, fallback)
+    } catch (error) {
+      send(res, 500, { error: error.message || 'Discovery source is unavailable' })
+    }
     return
   }
 
